@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { ethers } from 'ethers';
+import RetroPlane from "./RetroPlane";
 
 // Önce fonksiyonu tanımla
 const createIsolatedProvider = () => {
@@ -108,6 +109,29 @@ const ErrorBox = styled.div`
   text-align: center;
 `;
 
+const RetroButton = styled.button`
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 1000;
+  background: #000;
+  color: #00ff00;
+  border: 2px solid #00ff00;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-family: 'VT323', monospace;
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px #00ff0080;
+  text-shadow: 0 0 5px #00ff00;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  &:hover {
+    background: #111;
+    color: #fff;
+    box-shadow: 0 0 16px #00ff00;
+  }
+`;
+
 function App() {
   const [blockData, setBlockData] = useState(null);
   const [error, setError] = useState(null);
@@ -116,10 +140,12 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [txStats, setTxStats] = useState({
     'Transfer': 0,
+    'NFT Mint': 0,
+    'DEX Swap': 0,
     'Contract Creation': 0,
-    'Contract Interaction': 0,
     'Other': 0
   });
+  const [showRetro, setShowRetro] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -166,14 +192,14 @@ function App() {
           // Transaction analizi
           const stats = {
             'Transfer': 0,
+            'NFT Mint': 0,
+            'DEX Swap': 0,
             'Contract Creation': 0,
-            'Contract Interaction': 0,
             'Other': 0
           };
 
-          // İlk 10 transaction'ı analiz et
-          const txHashes = block.transactions.slice(0, 10);
-          for (const txHash of txHashes) {
+          // Tüm transaction'ları analiz et
+          for (const txHash of block.transactions) {
             const type = await analyzeTransactionType(txHash);
             stats[type]++;
           }
@@ -238,6 +264,7 @@ function App() {
     };
   }, []); // lastBlockNumber dependency'sini kaldırdık
 
+  // Transaction tipini analiz et
   const analyzeTransactionType = async (txHash) => {
     try {
       const tx = await provider.getTransaction(txHash);
@@ -250,12 +277,29 @@ function App() {
 
       // Contract Creation kontrolü
       if (!tx.to) {
+        // NFT Mint kontrolü (basit ERC721/1155 signature)
+        if (tx.data && tx.data.startsWith('0x60806040')) {
+          return 'NFT Mint';
+        }
         return 'Contract Creation';
       }
 
-      // Contract Interaction kontrolü
-      if (tx.data && tx.data !== '0x') {
-        return 'Contract Interaction';
+      // DEX Swap kontrolü (Uniswap/PancakeSwap gibi router fonksiyon imzaları)
+      if (tx.data && (
+        tx.data.startsWith('0x38ed1739') || // swapExactTokensForTokens
+        tx.data.startsWith('0x18cbafe5') || // swapExactETHForTokens
+        tx.data.startsWith('0x8803dbee') || // swapTokensForExactTokens
+        tx.data.startsWith('0x5c11d795')    // swapETHForExactTokens
+      )) {
+        return 'DEX Swap';
+      }
+
+      // NFT Mint kontrolü (OpenSea/standart mint fonksiyon imzaları)
+      if (tx.data && (
+        tx.data.startsWith('0x1249c58b') || // mint(address,uint256)
+        tx.data.startsWith('0x40c10f19')    // mint(address,uint256)
+      )) {
+        return 'NFT Mint';
       }
 
       return 'Other';
@@ -265,64 +309,83 @@ function App() {
     }
   };
 
+  if (showRetro) {
+    return <RetroPlane onReturn={() => setShowRetro(false)} />;
+  }
+
   if (error) {
     return (
-      <AppContainer>
-        <Title>MONAD TESTNET BLOCK EXPLORER</Title>
-        <Terminal>
-          <ErrorBox>
-            <h2>Hata</h2>
-            <p>{error}</p>
-            <p>Son güncelleme: {lastUpdate.toLocaleTimeString()}</p>
-          </ErrorBox>
-        </Terminal>
-      </AppContainer>
+      <div>
+        <RetroButton onClick={() => setShowRetro(true)}>
+          GO TO RETRO PLANE
+        </RetroButton>
+        <AppContainer>
+          <Title>MONAD TESTNET BLOCK EXPLORER</Title>
+          <Terminal>
+            <ErrorBox>
+              <h2>Hata</h2>
+              <p>{error}</p>
+              <p>Son güncelleme: {lastUpdate.toLocaleTimeString()}</p>
+            </ErrorBox>
+          </Terminal>
+        </AppContainer>
+      </div>
     );
   }
 
   if (!blockData) {
     return (
-      <AppContainer>
-        <Title>MONAD TESTNET BLOCK EXPLORER</Title>
-        <Terminal>
-          <LoadingBox>
-            <h2>Yükleniyor...</h2>
-            <p>Blok verileri alınıyor...</p>
-          </LoadingBox>
-        </Terminal>
-      </AppContainer>
+      <div>
+        <RetroButton onClick={() => setShowRetro(true)}>
+          GO TO RETRO PLANE
+        </RetroButton>
+        <AppContainer>
+          <Title>MONAD TESTNET BLOCK EXPLORER</Title>
+          <Terminal>
+            <LoadingBox>
+              <h2>Yükleniyor...</h2>
+              <p>Blok verileri alınıyor...</p>
+            </LoadingBox>
+          </Terminal>
+        </AppContainer>
+      </div>
     );
   }
 
   return (
-    <AppContainer>
-      <Title>MONAD TESTNET BLOCK EXPLORER</Title>
-      <Terminal>
-        <DataDisplay>
-          <UpdateIndicator isLoading={isLoading}>Güncelleniyor...</UpdateIndicator>
-          <p>Block Number: {blockData?.blockNumber}</p>
-          <p>Block Hash: {blockData?.hash}</p>
-          <p>Parent Hash: {blockData?.parentHash}</p>
-          <p>Timestamp: {blockData?.timestamp}</p>
-          <p>Transactions: {blockData?.transactions}</p>
-          <p>Gas Used: {blockData?.gasUsed}</p>
-          <p>Gas Limit: {blockData?.gasLimit}</p>
-          <p>Base Fee: {blockData?.baseFeePerGas} wei</p>
-          <p>Miner: {blockData?.miner}</p>
-          <p>Son Güncelleme: {lastUpdate.toLocaleTimeString()}</p>
-        </DataDisplay>
+    <div>
+      <RetroButton onClick={() => setShowRetro(true)}>
+        GO TO RETRO PLANE
+      </RetroButton>
+      <AppContainer>
+        <Title>MONAD TESTNET BLOCK EXPLORER</Title>
+        <Terminal>
+          <DataDisplay>
+            <UpdateIndicator isLoading={isLoading}>Güncelleniyor...</UpdateIndicator>
+            <p>Block Number: {blockData?.blockNumber}</p>
+            <p>Block Hash: {blockData?.hash}</p>
+            <p>Parent Hash: {blockData?.parentHash}</p>
+            <p>Timestamp: {blockData?.timestamp}</p>
+            <p>Transactions: {blockData?.transactions}</p>
+            <p>Gas Used: {blockData?.gasUsed}</p>
+            <p>Gas Limit: {blockData?.gasLimit}</p>
+            <p>Base Fee: {blockData?.baseFeePerGas} wei</p>
+            <p>Miner: {blockData?.miner}</p>
+            <p>Son Güncelleme: {lastUpdate.toLocaleTimeString()}</p>
+          </DataDisplay>
 
-        <TransactionStats>
-          <StatTitle>İŞLEM TİPLERİ ANALİZİ</StatTitle>
-          {Object.entries(txStats).map(([type, count]) => (
-            <StatItem key={type}>
-              <StatLabel>{type}</StatLabel>
-              <StatValue>{count}</StatValue>
-            </StatItem>
-          ))}
-        </TransactionStats>
-      </Terminal>
-    </AppContainer>
+          <TransactionStats>
+            <StatTitle>İŞLEM TİPLERİ ANALİZİ</StatTitle>
+            {Object.entries(txStats).map(([type, count]) => (
+              <StatItem key={type}>
+                <StatLabel>{type}</StatLabel>
+                <StatValue>{count}</StatValue>
+              </StatItem>
+            ))}
+          </TransactionStats>
+        </Terminal>
+      </AppContainer>
+    </div>
   );
 }
 
