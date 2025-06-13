@@ -64,7 +64,7 @@ const Title = styled.h1`
   margin: 0;
 `;
 
-export default function RetroPlane({ blocks, onReturn, txStats }) {
+export default function RetroPlane({ blocks, onReturn, txStats, events }) {
   const canvasRef = useRef(null);
   const [planes, setPlanes] = useState([]);
   const [bullets, setBullets] = useState([]);
@@ -254,6 +254,17 @@ export default function RetroPlane({ blocks, onReturn, txStats }) {
     console.log("Turret görselleri:", turretImgs);
   }, [turrets, turretImgs]);
 
+  // Yeni event geldikçe bullet gönder
+  useEffect(() => {
+    if (!events || events.length === 0) return;
+    // Her event için ilgili uçağa bullet gönder
+    events.forEach(event => {
+      const targetPlane = planes.find(p => Number(p.blockNumber) === Number(event.blockNumber));
+      if (targetPlane) createBullet(event.type, targetPlane);
+    });
+    // eslint-disable-next-line
+  }, [events]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -312,19 +323,28 @@ export default function RetroPlane({ blocks, onReturn, txStats }) {
               ctx.drawImage(bulletImg, bullet.x, bullet.y, bullet.width, bullet.height);
             };
           }
-          // Çarpışma kontrolü
+          // Çarpışma kontrolü ve TX güncelleme
+          let hitPlaneId = null;
           planes.forEach(plane => {
-            if (checkCollision(bullet, plane)) {
-              // Transaction sayısını blok verilerinden güncelle
-              const blockData = blocks.find(b => Number(b.number) === Number(plane.blockNumber));
-              if (blockData) {
-                plane.transactionCount = blockData.transactions?.length || 0;
-                if (plane.transactionCount >= plane.maxTransactions) {
-                  plane.isDamaged = true;
-                }
-              }
+            if (checkCollision(bullet, plane) && !plane.isDamaged) {
+              hitPlaneId = plane.blockNumber;
             }
           });
+          if (hitPlaneId !== null) {
+            setPlanes(prevPlanes => prevPlanes.map(plane => {
+              if (plane.blockNumber === hitPlaneId && !plane.isDamaged) {
+                const blockData = blocks.find(b => Number(b.number) === Number(plane.blockNumber));
+                const totalTx = blockData?.transactions?.length || 0;
+                const newCount = (plane.transactionCount || 0) + 1;
+                return {
+                  ...plane,
+                  transactionCount: newCount,
+                  isDamaged: newCount >= totalTx && totalTx > 0
+                };
+              }
+              return plane;
+            }));
+          }
           // Ekrandan çıkan mermileri kaldır
           return bullet.y > 0;
         });

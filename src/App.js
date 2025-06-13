@@ -147,66 +147,24 @@ function App() {
   });
   const [showRetro, setShowRetro] = useState(false);
   const [blocks, setBlocks] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [ws, setWs] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
-    let timeoutId = null;
+    const socket = new WebSocket('ws://localhost:8080');
+    
+    socket.onopen = () => {
+      console.log('WebSocket bağlantısı kuruldu');
+      setIsConnected(true);
+    };
 
-    const fetchData = async () => {
-      if (!isMounted) return;
-
-      try {
-        setIsLoading(true);
-        console.log('[FETCH] Başlatıldı, isMounted:', isMounted);
-        
-        const network = await provider.getNetwork();
-        console.log('[FETCH] Network bilgisi:', network);
-        
-        const blockNumber = await provider.getBlockNumber();
-        console.log('[FETCH] Block number alındı:', blockNumber);
-        
-        if (!isMounted) return;
-        
-        if (lastBlockNumber !== null && blockNumber <= lastBlockNumber) {
-          console.log('[FETCH] Yeni blok yok, son blok:', lastBlockNumber);
-          setLastUpdate(new Date());
-          setIsLoading(false);
-          return;
-        }
-        
-        setLastBlockNumber(blockNumber);
-        
-        const block = await provider.getBlock(blockNumber, true);
-        
-        if (!isMounted) return;
-        
-        console.log('[FETCH] Block detayları alındı:', {
-          number: block?.number,
-          hash: block?.hash,
-          timestamp: block?.timestamp,
-          transactions: block?.transactions?.length
-        });
-        
-        if (block && block.number && block.hash && block.timestamp) {
-          console.log('[FETCH] Blok verisi geçerli, state güncelleniyor');
-          
-          // Transaction analizi
-          const stats = {
-            'Transfer': 0,
-            'NFT Mint': 0,
-            'DEX Swap': 0,
-            'Contract Creation': 0,
-            'Other': 0
-          };
-
-          // Tüm transaction'ları analiz et
-          for (const txHash of block.transactions) {
-            const type = await analyzeTransactionType(txHash);
-            stats[type]++;
-          }
-
-          setTxStats(stats);
-          
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      //console.log('WebSocket mesajı alındı:', data);
+      window.requestAnimationFrame(() => {
+        if (data.type === 'block') {
+          const { block, stats } = data.data;
           setBlockData({
             blockNumber: Number(block.number),
             timestamp: new Date(Number(block.timestamp) * 1000).toLocaleString(),
@@ -218,57 +176,41 @@ function App() {
             miner: block.miner,
             parentHash: block.parentHash
           });
+          setTxStats(stats);
           setBlocks(prev => {
             const newBlockNumber = Number(block.number);
             if (prev.length > 0 && Number(prev[prev.length-1].number) === newBlockNumber) return prev;
             return [...prev, { ...block, number: newBlockNumber }];
           });
-          setError(null);
-        } else {
-          console.error('[FETCH] Blok verisi eksik:', {
-            isMounted,
-            hasBlock: !!block,
-            blockNumber: block?.number,
-            blockHash: block?.hash,
-            blockTimestamp: block?.timestamp,
-            transactionsLength: block?.transactions?.length
-          });
-          setError('[FETCH] Blok verisi eksik veya hatalı! Lütfen konsolu kontrol edin.');
+        } else if (data.type === 'pendingTxs') {
+          //console.log('Pending transaction alındı:', data.data);
+          // Pending transaction'ları işle
+          const pendingTxs = data.data;
+          // Burada pending tx'leri işleyebilirsiniz
         }
-        
-        setLastUpdate(new Date());
-        setIsLoading(false);
-      } catch (err) {
-        if (!isMounted) return;
-        
-        console.error('[FETCH] Hata detayı:', {
-          message: err.message,
-          code: err.code,
-          stack: err.stack,
-          name: err.name
-        });
-        setError('Veri çekme hatası: ' + (err.message || err));
-        setIsLoading(false);
-      }
-
-      // Bir sonraki fetch için timeout ayarla
-      if (isMounted) {
-        timeoutId = setTimeout(fetchData, 500); // 0.5 saniye
-      }
+      });
     };
 
-    // İlk fetch'i başlat
-    fetchData();
+    socket.onerror = (error) => {
+      console.error('WebSocket hatası:', error);
+      setIsConnected(false);
+    };
 
-    // Cleanup
+    socket.onclose = () => {
+      console.log('WebSocket bağlantısı kesildi');
+      setIsConnected(false);
+      // 5 saniye sonra yeniden bağlanmayı dene
+      setTimeout(() => {
+        setWs(new WebSocket('ws://localhost:8080'));
+      }, 5000);
+    };
+
+    setWs(socket);
+
     return () => {
-      console.log('[FETCH] Component unmount ediliyor, cleanup başlatılıyor');
-      isMounted = false;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
+      socket.close();
     };
-  }, []); // lastBlockNumber dependency'sini kaldırdık
+  }, []);
 
   // Transaction tipini analiz et
   const analyzeTransactionType = async (txHash) => {
@@ -316,7 +258,7 @@ function App() {
   };
 
   if (showRetro) {
-    return <RetroPlane blocks={blocks} onReturn={() => setShowRetro(false)} txStats={txStats} />;
+    return <RetroPlane blocks={blocks} onReturn={() => setShowRetro(false)} txStats={txStats} events={events} />;
   }
 
   if (error) {
