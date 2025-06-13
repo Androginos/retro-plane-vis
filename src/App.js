@@ -146,6 +146,7 @@ function App() {
     'Other': 0
   });
   const [showRetro, setShowRetro] = useState(false);
+  const [blocks, setBlocks] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -217,6 +218,11 @@ function App() {
             miner: block.miner,
             parentHash: block.parentHash
           });
+          setBlocks(prev => {
+            const newBlockNumber = Number(block.number);
+            if (prev.length > 0 && Number(prev[prev.length-1].number) === newBlockNumber) return prev;
+            return [...prev, { ...block, number: newBlockNumber }];
+          });
           setError(null);
         } else {
           console.error('[FETCH] Blok verisi eksik:', {
@@ -247,7 +253,7 @@ function App() {
 
       // Bir sonraki fetch için timeout ayarla
       if (isMounted) {
-        timeoutId = setTimeout(fetchData, 1000);
+        timeoutId = setTimeout(fetchData, 500); // 0.5 saniye
       }
     };
 
@@ -310,7 +316,7 @@ function App() {
   };
 
   if (showRetro) {
-    return <RetroPlane onReturn={() => setShowRetro(false)} />;
+    return <RetroPlane blocks={blocks} onReturn={() => setShowRetro(false)} txStats={txStats} />;
   }
 
   if (error) {
@@ -323,9 +329,9 @@ function App() {
           <Title>MONAD TESTNET BLOCK EXPLORER</Title>
           <Terminal>
             <ErrorBox>
-              <h2>Hata</h2>
+              <h2>Error</h2>
               <p>{error}</p>
-              <p>Son güncelleme: {lastUpdate.toLocaleTimeString()}</p>
+              <p>Last update: {lastUpdate.toLocaleTimeString()}</p>
             </ErrorBox>
           </Terminal>
         </AppContainer>
@@ -343,8 +349,8 @@ function App() {
           <Title>MONAD TESTNET BLOCK EXPLORER</Title>
           <Terminal>
             <LoadingBox>
-              <h2>Yükleniyor...</h2>
-              <p>Blok verileri alınıyor...</p>
+              <h2>Loading...</h2>
+              <p>Getting block data...</p>
             </LoadingBox>
           </Terminal>
         </AppContainer>
@@ -361,7 +367,7 @@ function App() {
         <Title>MONAD TESTNET BLOCK EXPLORER</Title>
         <Terminal>
           <DataDisplay>
-            <UpdateIndicator isLoading={isLoading}>Güncelleniyor...</UpdateIndicator>
+            <UpdateIndicator isLoading={isLoading}>Updating...</UpdateIndicator>
             <p>Block Number: {blockData?.blockNumber}</p>
             <p>Block Hash: {blockData?.hash}</p>
             <p>Parent Hash: {blockData?.parentHash}</p>
@@ -375,7 +381,7 @@ function App() {
           </DataDisplay>
 
           <TransactionStats>
-            <StatTitle>İŞLEM TİPLERİ ANALİZİ</StatTitle>
+            <StatTitle>ANALYSIS OF TRANSACTION TYPES</StatTitle>
             {Object.entries(txStats).map(([type, count]) => (
               <StatItem key={type}>
                 <StatLabel>{type}</StatLabel>
