@@ -49,11 +49,11 @@ const BG_Y_OFFSET = 0; // BG'yi 50px aşağı kaydır
 
 // Her turret tipi için bullet çıkış pozisyonu offsetleri (ince ayar için)
 const TURRET_BULLET_OFFSETS = {
-  'Transfer': { x: 40, y: 10 },
-  'NFT Mint': { x: 40, y: 10 },
-  'DEX Swap': { x: 40, y: 10 },
-  'Contract Creation': { x: 40, y: 10 },
-  'Other': { x: 40, y: 10 }
+  'Transfer': { x: 40, y: 0 },
+  'NFT Mint': { x: 40, y: 0 },
+  'DEX Swap': { x: 40, y: 0 },
+  'Contract Creation': { x: 40, y: 0 },
+  'Other': { x: 40, y: 0 }
 };
 
 // Mermi boyutları için sabitler
@@ -76,6 +76,13 @@ const Title = styled.h1`
   font-family: 'VT323', monospace;
   margin: 0;
 `;
+
+// Atari arka plan ayarları
+const ATARI_BG_SCALE = 1.1;
+const ATARI_BG_X_OFFSET = 10;
+const ATARI_BG_Y_OFFSET = 370;
+
+const TURRET_LABEL_Y_OFFSET = 20; // Turret altı yazı mesafesi
 
 export default function RetroPlane({ blocks, onReturn, txStats, events }) {
   const canvasRef = useRef(null);
@@ -285,20 +292,6 @@ export default function RetroPlane({ blocks, onReturn, txStats, events }) {
     console.log("Turret görselleri:", turretImgs);
   }, [turrets, turretImgs]);
 
-  // Manuel mermi oluşturma testi
-  useEffect(() => {
-    console.log('=== Manuel Mermi Testi Başladı ===');
-    
-    // Her turret için bir mermi oluştur
-    turrets.forEach(turret => {
-      const targetPlane = planes[0]; // İlk uçağı hedef al
-      if (targetPlane) {
-        console.log('Test mermisi oluşturuluyor:', { turret: turret.type, targetPlane });
-        createBullet(turret.type, targetPlane);
-      }
-    });
-  }, [turrets, planes]); // Sadece turrets ve planes değiştiğinde çalışsın
-
   // Yeni blok geldiğinde her tx tipinden bir bullet gönder
   useEffect(() => {
     console.log('=== Yeni Blok Efekti Başladı ===');
@@ -318,28 +311,16 @@ export default function RetroPlane({ blocks, onReturn, txStats, events }) {
       return;
     }
     
-    console.log('İşlemler:', latestBlock.transactions);
-    
-    // Her tx tipinden sadece bir tane bullet gönder
+    // İşlemleri type'a göre grupla
     const typeSet = new Set();
     latestBlock.transactions.forEach(tx => {
-      console.log('İşlem kontrol ediliyor:', tx);
-      
-      if (!tx.type) {
-        console.log('İşlem tipi yok:', tx);
-        return;
-      }
-      
+      if (!tx.type) return;
       if (!typeSet.has(tx.type)) {
         typeSet.add(tx.type);
+        // Sadece bu bloğun uçağına mermi gönder
         const targetPlane = planes.find(p => Number(p.blockNumber) === Number(latestBlock.number));
-        console.log('Hedef uçak bulundu:', targetPlane);
-        
         if (targetPlane) {
-          console.log('Mermi oluşturuluyor:', { type: tx.type, targetPlane });
           createBullet(tx.type, targetPlane);
-        } else {
-          console.log('Hedef uçak bulunamadı');
         }
       }
     });
@@ -409,6 +390,19 @@ export default function RetroPlane({ blocks, onReturn, txStats, events }) {
           ctx.fillStyle = '#fff';
           ctx.fillText(turret.type, x, y + 40);
         }
+        // Altına tipini yaz
+        ctx.save();
+        ctx.font = 'bold 24px VT323, monospace';
+        ctx.fillStyle = '#00ff00';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#00ff00';
+        ctx.shadowBlur = 8;
+        ctx.fillText(
+          turret.type === 'Contract Creation' ? 'Contract' : turret.type,
+          x + (turretImg?.width || 80) / 2,
+          y + (turretImg?.height || 80) + 32
+        );
+        ctx.restore();
       });
       // 3. Uçakları çiz
       planes.forEach(plane => {
@@ -543,11 +537,13 @@ export default function RetroPlane({ blocks, onReturn, txStats, events }) {
         alt="Atari Background"
         style={{
           position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          zIndex: 2
+          top: ATARI_BG_Y_OFFSET,
+          left: ATARI_BG_X_OFFSET,
+          width: `${GAME_WIDTH * ATARI_BG_SCALE}px`,
+          height: `${GAME_HEIGHT * ATARI_BG_SCALE}px`,
+          zIndex: 10001, // EN ÜSTTE
+          pointerEvents: 'none',
+          display: 'none',
         }}
       />
       
@@ -564,8 +560,38 @@ export default function RetroPlane({ blocks, onReturn, txStats, events }) {
         border: '4px solid #00ff00',
         borderRadius: 12,
         boxShadow: '0 0 24px #00ff00, 0 4px 32px #000a',
-        overflow: 'hidden'
+        overflow: 'visible'
       }}>
+        {/* Turret yazıları */}
+        {turrets.map((turret, i) => {
+          const turretImg = turretImgs[turret.type];
+          const x = turret.x;
+          const y = turret.y;
+          const width = turretImg?.width || 80;
+          const height = turretImg?.height || 80;
+          return (
+            <div
+              key={turret.type}
+              style={{
+                position: 'absolute',
+                left: x + width / 2,
+                top: y + height + TURRET_LABEL_Y_OFFSET,
+                transform: 'translate(-50%, 0)',
+                zIndex: 20000,
+                fontFamily: 'VT323, monospace',
+                fontSize: 24,
+                color: '#00ff00',
+                fontWeight: 'bold',
+                textShadow: '0 0 8px #00ff00, 0 0 16px #00ff00',
+                pointerEvents: 'none',
+                whiteSpace: 'nowrap',
+                userSelect: 'none',
+              }}
+            >
+              {turret.type === 'Contract Creation' ? 'Contract' : turret.type}
+            </div>
+          );
+        })}
         {/* Arka plan görüntüsünü kaldırdık */}
         <canvas
           ref={canvasRef}
