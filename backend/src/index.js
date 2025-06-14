@@ -54,12 +54,19 @@ wss.on('connection', (ws) => {
   });
 });
 
+// BigInt'leri string'e çeviren replacer fonksiyonu
+function replacer(key, value) {
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+  return value;
+}
+
 // Tüm istemcilere mesaj gönder
 const broadcast = (data) => {
-  const message = JSON.stringify(data);
-  clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
+  wss.clients.forEach(client => {
+    if (client.readyState === 1) {
+      client.send(JSON.stringify(data, replacer));
     }
   });
 };
@@ -70,8 +77,24 @@ const pollBlocks = async () => {
   
   try {
     const blockNumber = await provider.getBlockNumber();
-    const block = await provider.getBlock(blockNumber, true);
-    
+    const block = await provider.getBlock(blockNumber, false); // sadece hash'ler gelir
+    let transactions = [];
+
+    if (block && block.transactions && block.transactions.length > 0) {
+      // Her tx hash için detayları çek
+      transactions = await Promise.all(
+        block.transactions.map(async (txHash) => {
+          try {
+            return await provider.getTransaction(txHash);
+          } catch (e) {
+            return null;
+          }
+        })
+      );
+      // null olanları filtrele
+      transactions = transactions.filter(Boolean);
+    }
+
     if (block) {
       // Transaction analizi
       const stats = {
@@ -83,15 +106,16 @@ const pollBlocks = async () => {
       };
 
       // Transaction'ları analiz et
-      for (const tx of block.transactions) {
+      const txsWithType = await Promise.all(transactions.map(async (tx) => {
         const type = await analyzeTransactionType(tx, provider);
         stats[type]++;
-      }
+        return { ...tx, type };
+      }));
 
       broadcast({
         type: 'block',
         data: {
-          block,
+          block: { ...block, transactions: txsWithType }, // frontend'e type ile gönder
           stats
         }
       });
@@ -124,33 +148,44 @@ const pollPendingTxs = async () => {
 // Transaction tipini analiz et
 const analyzeTransactionType = async (tx, provider) => {
   try {
-    if (!tx.data || tx.data === '0x') {
+    // 1. Sadece değer transferi (ETH transferi)
+    if ((!tx.data || tx.data === '0x') && tx.to) {
       return 'Transfer';
     }
 
-    if (!tx.to) {
-      if (tx.data.startsWith('0x60806040')) {
-        return 'NFT Mint';
-      }
-      return 'Contract Creation';
-    }
-
+    // 2. DEX Swap (yaygın router signature'ları)
     if (tx.data && (
-      tx.data.startsWith('0x38ed1739') || // swapExactTokensForTokens
-      tx.data.startsWith('0x18cbafe5') || // swapExactETHForTokens
-      tx.data.startsWith('0x8803dbee') || // swapTokensForExactTokens
-      tx.data.startsWith('0x5c11d795')    // swapETHForExactTokens
+      tx.data.startsWith('0x38ed1739') ||
+      tx.data.startsWith('0x18cbafe5') ||
+      tx.data.startsWith('0x8803dbee') ||
+      tx.data.startsWith('0x5c11d795') ||
+      tx.data.startsWith('0x7ff36ab5') ||
+      tx.data.startsWith('0x414bf389')
     )) {
       return 'DEX Swap';
     }
 
+    // 3. NFT Mint (yaygın mint fonksiyonları)
     if (tx.data && (
-      tx.data.startsWith('0x1249c58b') || // mint(address,uint256)
-      tx.data.startsWith('0x40c10f19')    // mint(address,uint256)
+      tx.data.startsWith('0x1249c58b') ||
+      tx.data.startsWith('0x40c10f19') ||
+      tx.data.startsWith('0xa0712d68') ||
+      tx.data.startsWith('0x6a627842')
     )) {
       return 'NFT Mint';
     }
 
+    // 4. Contract Creation (to alanı yok)
+    if (!tx.to) {
+      return 'Contract Creation';
+    }
+
+    // 5. Diğer contract interaction'lar
+    if (tx.data && tx.data !== '0x') {
+      return 'Other';
+    }
+
+    // 6. Fallback
     return 'Other';
   } catch (error) {
     console.error('Transaction analiz hatası:', error);

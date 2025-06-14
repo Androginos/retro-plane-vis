@@ -179,7 +179,8 @@ function App() {
           setTxStats(stats);
           setBlocks(prev => {
             const newBlockNumber = Number(block.number);
-            if (prev.length > 0 && Number(prev[prev.length-1].number) === newBlockNumber) return prev;
+            const lastBlockNumber = prev.length > 0 ? Number(prev[prev.length - 1].number) : 0;
+            if (newBlockNumber <= lastBlockNumber) return prev;
             return [...prev, { ...block, number: newBlockNumber }];
           });
         } else if (data.type === 'pendingTxs') {
@@ -192,7 +193,7 @@ function App() {
     };
 
     socket.onerror = (error) => {
-      console.error('WebSocket hatası:', error);
+      console.error('WebSocket hatası:', JSON.stringify(error));
       setIsConnected(false);
     };
 
@@ -252,7 +253,7 @@ function App() {
 
       return 'Other';
     } catch (err) {
-      console.warn('Error analyzing transaction:', err);
+      console.warn('Error analyzing transaction:', JSON.stringify(err));
       return 'Other';
     }
   };
@@ -272,7 +273,7 @@ function App() {
           <Terminal>
             <ErrorBox>
               <h2>Error</h2>
-              <p>{error}</p>
+              <p>{typeof error === 'string' ? error : JSON.stringify(error)}</p>
               <p>Last update: {lastUpdate.toLocaleTimeString()}</p>
             </ErrorBox>
           </Terminal>
