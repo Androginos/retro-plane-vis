@@ -126,7 +126,7 @@ const pollBlocks = async () => {
         };
 
         // Transaction'ları sınırla
-        const limitedTransactions = block.transactions.slice(0, MAX_TRANSACTIONS_PER_BLOCK);
+        const limitedTransactions = block.transactions;
 
         // Transaction'ları paralel olarak işle
         const txPromises = limitedTransactions.map(async (txHash) => {

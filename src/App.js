@@ -261,7 +261,7 @@ function App() {
   // WebSocket bağlantısı
   useEffect(() => {
     const connectWebSocket = () => {
-      const ws = new WebSocket('ws://localhost:8080');
+      const ws = new WebSocket('ws://localhost:3001');
       
       ws.onopen = () => {
         console.log('WebSocket connection established');

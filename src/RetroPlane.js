@@ -19,7 +19,8 @@ const BULLET_IMGS = {
   'NFT Mint': process.env.PUBLIC_URL + "/assets/bullets/nft_mint_bullet.png",
   'DEX Swap': process.env.PUBLIC_URL + "/assets/bullets/dex_swap_bullet.png",
   'Contract Creation': process.env.PUBLIC_URL + "/assets/bullets/contract_bullet.png",
-  'Other': process.env.PUBLIC_URL + "/assets/bullets/other_bullet.png"
+  'Other': process.env.PUBLIC_URL + "/assets/bullets/other_bullet.png",
+  'Blue': process.env.PUBLIC_URL + "/assets/bullets/blue_sprite.png"
 };
 const ATARI_BG = process.env.PUBLIC_URL + "/assets/atari_bg.png";
 const RETURN_BTN = process.env.PUBLIC_URL + "/assets/return_button.png";
@@ -35,24 +36,31 @@ const GAME_HEIGHT = 600;
 const PLANE_WIDTH = 120;
 const PLANE_HEIGHT = 60;
 const PLANE_SPEED = 2;
-const GHOST_PLANE_SPEED = PLANE_SPEED * 0.5; // Ghost uçaklar daha yavaş
-const OVERLOADED_PLANE_SPEED = PLANE_SPEED * 0.3; // Overloaded uçaklar en yavaş
-const OUT_OF_GAS_PLANE_SPEED = PLANE_SPEED * 0.4; // Out of gas uçaklar yavaş
-const FALL_SPEED = 1.5; // Düşme hızı
-const GHOST_FALL_SPEED = FALL_SPEED * 0.7; // Ghost uçaklar daha yavaş düşer
-const OVERLOADED_FALL_SPEED = FALL_SPEED * 0.5; // Overloaded uçaklar en yavaş düşer
-const OUT_OF_GAS_FALL_SPEED = FALL_SPEED * 0.8; // Out of gas uçaklar biraz daha hızlı düşer
+const GHOST_PLANE_SPEED = PLANE_SPEED * 0.5;
+const OVERLOADED_PLANE_SPEED = PLANE_SPEED * 0.3;
+const OUT_OF_GAS_PLANE_SPEED = PLANE_SPEED * 0.4;
+const FALL_SPEED = 1.5;
+const GHOST_FALL_SPEED = FALL_SPEED * 0.7;
+const OVERLOADED_FALL_SPEED = FALL_SPEED * 0.5;
+const OUT_OF_GAS_FALL_SPEED = FALL_SPEED * 0.8;
 const BULLET_SPEED = 5;
 const BULLET_RADIUS = 3;
 const EXPLOSION_RADIUS = 20;
 const EXPLOSION_DURATION = 500;
-const GAS_THRESHOLD = 0.9;
+const GAS_THRESHOLD = 0.7; // Test için düşürüldü
 const OUT_OF_GAS_DURATION = 2000;
 const OUT_OF_GAS_SCALE = 1.5;
 const OUT_OF_GAS_COLOR = '#ff0000';
-const FALL_DELAY_MIN = 3000; // Minimum düşme gecikmesi
-const FALL_DELAY_MAX = 8000; // Maksimum düşme gecikmesi
-const FALL_DELAY_STEP = 1000; // Düşme gecikmesi adımı
+const FALL_DELAY_MIN = 3000;
+const FALL_DELAY_MAX = 8000;
+const FALL_DELAY_STEP = 1000;
+
+// Yeni düşme açısı sabitleri
+const MIN_FALL_ANGLE = 37; // Minimum düşme açısı (derece)
+const MAX_FALL_ANGLE = 78; // Maksimum düşme açısı (derece)
+const FALL_ANGLE_VARIATION = 5; // Her frame'de açı değişimi (derece)
+const FALL_SPEED_VARIATION = 0.2; // Düşme hızı varyasyonu
+const FALL_ROTATION_SPEED = 0.5; // Düşme sırasındaki dönüş hızı (derece/frame)
 
 // Turret boyutunu ve pozisyonunu kolayca ayarlamak için sabitler
 const TURRET_SCALE = 2; // 2 katı büyüklük
@@ -61,8 +69,6 @@ const TURRET_X_START = 25; // İlk turret'ın x pozisyonu
 const TURRET_X_GAP = 190; // Turretlar arası mesafe
 
 const BG_SCALE = 1.04; // Orijinal boyut
-const BG_X_OFFSET = 0; // X ekseninde kaydırma (pixel cinsinden)
-const BG_Y_OFFSET = 0; // BG'yi 50px aşağı kaydır
 
 // Her turret tipi için bullet çıkış pozisyonu offsetleri (ince ayar için)
 const TURRET_BULLET_OFFSETS = {
@@ -151,6 +157,19 @@ const MAX_BULLETS = 50; // Maksimum mermi sayısı
 
 const DEBUG = process.env.NODE_ENV !== 'production';
 
+const ResponsivePanel = styled(Panel)`
+  @media (max-width: 700px) {
+    right: 8px;
+    width: ${props => props.$open ? '90vw' : '48px'};
+    min-width: 0;
+    max-width: 95vw;
+    padding: ${props => props.$open ? '18px 18px 12px 18px' : '8px 0 8px 0'};
+    overflow: hidden;
+    transition: width 0.3s, padding 0.3s;
+    box-shadow: 0 0 16px #00ff00;
+  }
+`;
+
 const RetroPlane = ({ blocks, onReturn, txStats, events }) => {
   const canvasRef = useRef(null);
   const [planes, setPlanes] = useState([]);
@@ -168,6 +187,10 @@ const RetroPlane = ({ blocks, onReturn, txStats, events }) => {
   const [selectedPlane, setSelectedPlane] = useState(null);
   const [rescuedPlanes, setRescuedPlanes] = useState([]);
   const RESCUE_ANIMATION_DURATION = 1200;
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(window.innerWidth > 700);
+  const [canvasSize, setCanvasSize] = useState({ width: GAME_WIDTH, height: GAME_HEIGHT });
+  const [selectedRescuedBlock, setSelectedRescuedBlock] = useState(null);
+  const [selectedNormalBlock, setSelectedNormalBlock] = useState(null);
 
   // Düşme gecikmesi hesaplama
   const getFallDelay = useCallback(() => {
@@ -181,8 +204,8 @@ const RetroPlane = ({ blocks, onReturn, txStats, events }) => {
       return prevPlanes.map(plane => {
         if (Number(plane.blockNumber) === Number(blockData.number)) {
           const newCount = blockData.transactions?.length || 0;
-          const gasUsed = blockData.gasUsed || 0;
-          const gasLimit = blockData.gasLimit || 1;
+          const gasUsed = Number(blockData.gasUsed) || 0;
+          const gasLimit = Number(blockData.gasLimit) || 1;
           const gasRatio = gasUsed / gasLimit;
           
           // Gas oranı eşiği aşıldığında uçak düşmeye başlar
@@ -225,8 +248,8 @@ const RetroPlane = ({ blocks, onReturn, txStats, events }) => {
     const direction = x < 0 ? 'right' : 'left';
     const planeType = Math.random() > 0.5 ? 'plane1' : 'plane2';
     const totalCount = Array.isArray(block.transactions) ? block.transactions.length : 0;
-    const gasUsed = block.gasUsed || 0;
-    const gasLimit = block.gasLimit || 1;
+    const gasUsed = Number(block.gasUsed) || 0;
+    const gasLimit = Number(block.gasLimit) || 1;
     const gasRatio = gasUsed / gasLimit;
     const revertCount = Array.isArray(block.transactions) ? 
       block.transactions.filter(tx => tx.type === 'Other' || tx.txType === 'revert').length : 0;
@@ -362,8 +385,8 @@ const RetroPlane = ({ blocks, onReturn, txStats, events }) => {
     const y = getNonOverlappingY(planes, width, height);
     
     // Gas kullanım oranını hesapla
-    const gasUsed = block.gasUsed || 0;
-    const gasLimit = block.gasLimit || 1;
+    const gasUsed = Number(block.gasUsed) || 0;
+    const gasLimit = Number(block.gasLimit) || 1;
     const gasRatio = gasUsed / gasLimit;
     
     // Overloaded block kontrolü: revert oranı %50'den fazlaysa
@@ -528,7 +551,17 @@ const RetroPlane = ({ blocks, onReturn, txStats, events }) => {
   // Game loop optimizasyonu
   useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas) {
+      console.error('Canvas referansı bulunamadı');
+      return;
+    }
+
     const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      console.error('Canvas context oluşturulamadı');
+      return;
+    }
+
     let lastRenderTime = 0;
     let animationFrameId;
 
@@ -536,443 +569,478 @@ const RetroPlane = ({ blocks, onReturn, txStats, events }) => {
     bgImg.src = BG_GIF;
 
     const gameLoop = (currentTime) => {
-      // FPS kontrolü
-      if (currentTime - lastRenderTime < RENDER_INTERVAL) {
-        animationFrameId = requestAnimationFrame(gameLoop);
-        return;
-      }
-      lastRenderTime = currentTime;
+      try {
+        // FPS kontrolü
+        if (currentTime - lastRenderTime < RENDER_INTERVAL) {
+          animationFrameId = requestAnimationFrame(gameLoop);
+          return;
+        }
+        lastRenderTime = currentTime;
 
-      // Canvas temizleme
-      ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        // Canvas temizleme
+        ctx.clearRect(0, 0, canvasSize.width, canvasSize.height);
 
-      // Arka plan çizimi (sadece değiştiğinde)
-      if (bgImg.complete) {
-        const scaledWidth = GAME_WIDTH * BG_SCALE;
-        const scaledHeight = GAME_HEIGHT * BG_SCALE;
-        ctx.drawImage(
-          bgImg,
-          BG_X_OFFSET,
-          BG_Y_OFFSET,
-          scaledWidth,
-          scaledHeight
-        );
-      }
+        // Arka plan çizimi (sadece değiştiğinde)
+        if (bgImg.complete) {
+          ctx.drawImage(bgImg, 0, 0, canvasSize.width, canvasSize.height);
+        }
 
-      // Mermileri optimize et
-      if (bulletsRef.current.length > 100) {
-        bulletsRef.current = bulletsRef.current.slice(-100);
-      }
+        // Mermileri optimize et
+        if (bulletsRef.current.length > 100) {
+          bulletsRef.current = bulletsRef.current.slice(-100);
+        }
 
-      // Uçakları optimize et
-      if (planes.length > 15) {
-        setPlanes(prev => prev.slice(-15));
-      }
+        // Test mermisi: Ekranın ortasından soldan sağa ateşlenen blue_sprite
+        const testBullet = {
+          x: 0,
+          y: canvasSize.height / 2,
+          width: 32,
+          height: 32,
+          speed: BULLET_SPEED,
+          type: 'Blue',
+          targetPlaneId: null,
+          id: Date.now() + Math.random(),
+          count: 1,
+          txHash: null,
+          txType: 'success',
+          color: '#0000ff',
+          status: 'flying',
+          from: null,
+          to: null,
+          value: null
+        };
+        bulletsRef.current.push(testBullet);
 
-      // Mermileri hareket ettir (optimize edilmiş)
-      bulletsRef.current = bulletsRef.current
-        .map(bullet => {
-        const targetPlane = planes.find(p => Number(p.blockNumber) === Number(bullet.targetPlaneId));
-          if (!targetPlane) return null;
+        // Mermileri hareket ettir (optimize edilmiş)
+        bulletsRef.current = bulletsRef.current
+          .map(bullet => {
+            try {
+              if (bullet.type === 'Blue') {
+                // Blue sprite görselini yükle ve çiz
+                const img = new window.Image();
+                img.src = BULLET_IMGS['Blue'];
+                ctx.globalAlpha = 1;
+                ctx.drawImage(img, bullet.x, bullet.y, bullet.width, bullet.height);
+              } else {
+                const targetPlane = planes.find(p => Number(p.blockNumber) === Number(bullet.targetPlaneId));
+                if (!targetPlane) return null;
 
-          const bulletCenter = {
-            x: bullet.x + bullet.width / 2,
-            y: bullet.y + bullet.height / 2
-          };
-          const planeCenter = {
-            x: targetPlane.x + targetPlane.width / 2,
-            y: targetPlane.y + targetPlane.height / 2
-          };
+                const bulletCenter = {
+                  x: bullet.x + bullet.width / 2,
+                  y: bullet.y + bullet.height / 2
+                };
+                const planeCenter = {
+                  x: targetPlane.x + targetPlane.width / 2,
+                  y: targetPlane.y + targetPlane.height / 2
+                };
 
-          const dx = planeCenter.x - bulletCenter.x;
-          const dy = planeCenter.y - bulletCenter.y;
-          const dist = Math.sqrt(dx*dx + dy*dy);
+                const dx = planeCenter.x - bulletCenter.x;
+                const dy = planeCenter.y - bulletCenter.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
 
-          if (dist < 25) {
-            // Başarılı mermi (success): yeşil patlama efekti
-            if (bullet.txType === 'success') {
-              // Patlama efekti için kısa süreli bir daire çiz
-              const ctx = canvasRef.current.getContext('2d');
-              ctx.save();
-              ctx.globalAlpha = 0.8;
-              ctx.beginPath();
-              ctx.arc(bullet.x + bullet.width/2, bullet.y + bullet.height/2, 24, 0, Math.PI * 2);
-              ctx.fillStyle = '#00ff00';
-              ctx.shadowColor = '#00ff00';
-              ctx.shadowBlur = 20;
-              ctx.fill();
-              ctx.restore();
-            }
-            // Başarısız mermi (revert): kırmızı sekme efekti
-            if (bullet.txType === 'revert') {
-              const ctx = canvasRef.current.getContext('2d');
-              ctx.save();
-              ctx.globalAlpha = 0.8;
-              ctx.beginPath();
-              ctx.arc(bullet.x + bullet.width/2, bullet.y + bullet.height/2, 18, 0, Math.PI * 2);
-              ctx.fillStyle = '#ff0000';
-              ctx.shadowColor = '#ff0000';
-              ctx.shadowBlur = 16;
-              ctx.fill();
-              ctx.restore();
-            }
-            // Bullet status güncelle
-            bullet.status = bullet.txType === 'success' ? 'hit' : 'reverted';
-            setTimeout(() => {
-              // Patlama/sekme efekti kısa süre sonra kaybolsun
-              bulletsRef.current = bulletsRef.current.filter(b => b.id !== bullet.id);
-              setBullets([...bulletsRef.current]);
-            }, 200);
-            // Uçak hitCount güncellemesi ve diğer mantıklar aşağıda devam ediyor
-            setPlanes(prevPlanes => prevPlanes.map(p => {
-              if (p.blockNumber === targetPlane.blockNumber) {
-                const newHit = (p.hitCount || 0) + 1;
-                // Sadece gas limit aşılmadıysa ve tx kadar vurulduysa damaged yap, ama düşürme
-                if (p.transactionCount > 0 && newHit >= p.transactionCount && p.gasUsed <= p.gasLimit && !p.isDamaged) {
+                if (dist < 25) {
+                  // Başarılı mermi (success): yeşil patlama efekti
+                  if (bullet.txType === 'success') {
+                    ctx.save();
+                    ctx.globalAlpha = 0.8;
+                    ctx.beginPath();
+                    ctx.arc(bullet.x + bullet.width/2, bullet.y + bullet.height/2, 24, 0, Math.PI * 2);
+                    ctx.fillStyle = '#00ff00';
+                    ctx.shadowColor = '#00ff00';
+                    ctx.shadowBlur = 20;
+                    ctx.fill();
+                    ctx.restore();
+                  }
+                  // Başarısız mermi (revert): kırmızı sekme efekti
+                  if (bullet.txType === 'revert') {
+                    ctx.save();
+                    ctx.globalAlpha = 0.8;
+                    ctx.beginPath();
+                    ctx.arc(bullet.x + bullet.width/2, bullet.y + bullet.height/2, 18, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ff0000';
+                    ctx.shadowColor = '#ff0000';
+                    ctx.shadowBlur = 16;
+                    ctx.fill();
+                    ctx.restore();
+                  }
+                  // Bullet status güncelle
+                  bullet.status = bullet.txType === 'success' ? 'hit' : 'reverted';
                   setTimeout(() => {
-                    setPlanes(prev2 => prev2.map(pp => pp.blockNumber === p.blockNumber ? { ...pp, hitCount: newHit, isDamaged: true, isFalling: false } : pp));
-                  }, 500);
-                  return { ...p, hitCount: newHit };
+                    bulletsRef.current = bulletsRef.current.filter(b => b.id !== bullet.id);
+                    setBullets([...bulletsRef.current]);
+                  }, 200);
+                  // Uçak hitCount güncellemesi
+                  setPlanes(prevPlanes => prevPlanes.map(p => {
+                    if (p.blockNumber === targetPlane.blockNumber) {
+                      const newHit = (p.hitCount || 0) + 1;
+                      if (p.transactionCount > 0 && newHit >= p.transactionCount && p.gasUsed <= p.gasLimit && !p.isDamaged) {
+                        setTimeout(() => {
+                          setPlanes(prev2 => prev2.map(pp => pp.blockNumber === p.blockNumber ? { ...pp, hitCount: newHit, isDamaged: true, isFalling: false } : pp));
+                        }, 500);
+                        return { ...p, hitCount: newHit };
+                      }
+                      return { ...p, hitCount: newHit };
+                    }
+                    return p;
+                  }));
+                  return null;
                 }
-                return { ...p, hitCount: newHit };
+
+                const speed = bullet.speed;
+                const vx = (dx / dist) * speed;
+                const vy = (dy / dist) * speed;
+
+                // Revert olan mermilerin hedefe dokunmadan ekran dışına gitmesi
+                if (bullet.txType === 'revert') {
+                  return {
+                    ...bullet,
+                    x: bullet.x + vx * 2, // Daha hızlı hareket et
+                    y: bullet.y + vy * 2
+                  };
+                }
+
+                return {
+                  ...bullet,
+                  x: bullet.x + vx,
+                  y: bullet.y + vy
+                };
               }
-              return p;
-            }));
-            return null;
-          }
+            } catch (error) {
+              console.error('Mermi işleme hatası:', error);
+              return null;
+            }
+          })
+          .filter(bullet => 
+            bullet && 
+            bullet.x > 0 && 
+            bullet.x < canvasSize.width && 
+            bullet.y > 0 && 
+            bullet.y < canvasSize.height
+          );
 
-          const speed = bullet.speed;
-          const vx = (dx / dist) * speed;
-          const vy = (dy / dist) * speed;
-
-          return {
-            ...bullet,
-            x: bullet.x + vx,
-            y: bullet.y + vy
-          };
-        })
-        .filter(bullet => 
-          bullet && 
-          bullet.x > 0 && 
-          bullet.x < GAME_WIDTH && 
-          bullet.y > 0 && 
-          bullet.y < GAME_HEIGHT
-        );
-
-      // Mermileri çiz (optimize edilmiş)
-      ctx.save();
-      bulletsRef.current.forEach(bullet => {
-        ctx.shadowColor = bullet.color || '#fff';
-        ctx.shadowBlur = 30;
-        ctx.fillStyle = bullet.color || '#fff';
-        ctx.globalAlpha = 0.85;
-        ctx.beginPath();
-        ctx.arc(bullet.x + bullet.width/2, bullet.y + bullet.height/2, bullet.width/2, 0, Math.PI * 2);
-        ctx.fill();
-      });
-      ctx.restore();
-
-      // Turret'leri çiz
-      turrets.forEach(turret => {
-        const turretImg = turretImgs[turret.type];
-        const x = turret.x;
-        const y = turret.y;
-        
-        if (turretImg?.img) {
-          ctx.drawImage(turretImg.img, x, y, turretImg.width, turretImg.height);
-        } else {
-          // Fallback görsel
-          ctx.fillStyle = '#ff0000';
-          ctx.fillRect(x, y, 80, 80);
-          ctx.fillStyle = '#fff';
-          ctx.fillText(turret.type, x, y + 40);
-        }
-        
-        // Turret tipini yaz
+        // Mermileri çiz
         ctx.save();
-        ctx.font = 'bold 24px VT323, monospace';
-        ctx.fillStyle = '#00ff00';
-        ctx.textAlign = 'center';
-        ctx.shadowColor = '#00ff00';
-        ctx.shadowBlur = 8;
-        ctx.fillText(
-          turret.type === 'Contract Creation' ? 'Contract' : turret.type,
-          x + (turretImg?.width || 80) / 2,
-          y + (turretImg?.height || 80) + 32
-        );
-        ctx.restore();
-      });
-
-      // Uçakları çiz (optimize edilmiş)
-      planes.forEach(plane => {
-        // Düşme başlatma kontrolü (her frame)
-        if (!plane.isFalling && (plane.type === 'outOfGas' || plane.type === 'overloaded')) {
-          const startTime = plane.type === 'outOfGas' ? plane.outOfGasTimestamp : plane.overloadedStartTime;
-          if (startTime && Date.now() - startTime > plane.fallDelay) {
-            plane.isFalling = true;
-            plane.fallStartTime = Date.now();
+        bulletsRef.current.forEach(bullet => {
+          try {
+            if (bullet.type === 'Blue') {
+              // Blue sprite görselini yükle ve çiz
+              const img = new window.Image();
+              img.src = BULLET_IMGS['Blue'];
+              ctx.globalAlpha = 1;
+              ctx.drawImage(img, bullet.x, bullet.y, bullet.width, bullet.height);
+            } else {
+              ctx.shadowColor = bullet.color || '#fff';
+              ctx.shadowBlur = 30;
+              ctx.fillStyle = bullet.color || '#fff';
+              ctx.globalAlpha = 0.85;
+              ctx.beginPath();
+              ctx.arc(bullet.x + bullet.width/2, bullet.y + bullet.height/2, bullet.width/2, 0, Math.PI * 2);
+              ctx.fill();
+              // Revert olan mermilerin ortasına X ekle
+              if (bullet.txType === 'revert') {
+                ctx.strokeStyle = '#ff0000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(bullet.x + bullet.width/2 - 5, bullet.y + bullet.height/2 - 5);
+                ctx.lineTo(bullet.x + bullet.width/2 + 5, bullet.y + bullet.height/2 + 5);
+                ctx.moveTo(bullet.x + bullet.width/2 + 5, bullet.y + bullet.height/2 - 5);
+                ctx.lineTo(bullet.x + bullet.width/2 - 5, bullet.y + bullet.height/2 + 5);
+                ctx.stroke();
+              }
+            }
+          } catch (error) {
+            console.error('Mermi çizim hatası:', error);
           }
-        }
-
-        // Düşen uçaklar için damaged görsel ve titrek/yarı opak efekt
-        let imgObj;
-        if (plane.isFalling) {
-          if (plane.planeType === 'plane1') {
-            imgObj = plane1DamagedImg || plane1Img;
-          } else {
-            imgObj = plane2DamagedImg || plane2Img;
-          }
-        } else {
-          imgObj = plane.planeType === 'plane1' ? plane1Img : plane2Img;
-        }
-
-        ctx.save();
-        // Düşen uçaklar için opaklık ve titreme
-        if (plane.isFalling) {
-          ctx.globalAlpha = 0.55;
-          const jitterX = Math.sin(Date.now() / 60 + plane.blockNumber) * 2;
-          const jitterY = Math.cos(Date.now() / 50 + plane.blockNumber) * 2;
-          if (imgObj?.img) {
-            ctx.drawImage(
-              imgObj.img,
-              plane.x + jitterX,
-              plane.y + jitterY,
-              imgObj.width || plane.width,
-              imgObj.height || plane.height
-            );
-          } else {
-            ctx.fillStyle = '#888';
-            ctx.fillRect(plane.x + jitterX, plane.y + jitterY, plane.width, plane.height);
-          }
-        } else {
-          ctx.globalAlpha = 1;
-          if (imgObj?.img) {
-            ctx.drawImage(
-              imgObj.img,
-              plane.x,
-              plane.y,
-              imgObj.width || plane.width,
-              imgObj.height || plane.height
-            );
-          } else {
-            ctx.fillStyle = '#888';
-            ctx.fillRect(plane.x, plane.y, plane.width, plane.height);
-          }
-        }
+        });
         ctx.restore();
 
-        // Uçak tipi etiketi ve blok numarası, tx sayısı
-        ctx.save();
-        ctx.font = 'bold 18px VT323, monospace';
-        ctx.textAlign = 'center';
-        ctx.shadowColor = '#000';
-        ctx.shadowBlur = 4;
-        let labelColor = '#fff';
-        let typeLabel = '';
-        if (plane.type === 'overloaded') {
-          labelColor = '#ffcc00';
-          typeLabel = 'OVERLOADED';
-        } else if (plane.type === 'outOfGas') {
-          labelColor = '#ff4444';
-          typeLabel = 'OUT OF GAS';
-        } else if (plane.type === 'ghost') {
-          labelColor = '#00ffff';
-          typeLabel = 'GHOST';
-        } else {
-          labelColor = '#00ff00';
-          typeLabel = 'NORMAL';
-        }
-        ctx.fillStyle = labelColor;
-        ctx.globalAlpha = 0.95;
-        ctx.fillText(
-          `#${plane.blockNumber} | tx: ${plane.transactionCount}`,
-          plane.x + (imgObj?.width || plane.width) / 2,
-          plane.y - 12
-        );
-        ctx.font = 'bold 16px VT323, monospace';
-        ctx.fillStyle = labelColor;
-        ctx.globalAlpha = 0.85;
-        ctx.fillText(
-          typeLabel,
-          plane.x + (imgObj?.width || plane.width) / 2,
-          plane.y + 10
-        );
-        ctx.restore();
-
-        // Uçak tipi için görsel efektler
-        if (plane.type === 'overloaded') {
-          ctx.save();
-          ctx.globalAlpha = 0.08;
-          ctx.fillStyle = '#ffcc00';
-          ctx.beginPath();
-          ctx.arc(
-            plane.x + (imgObj?.width || plane.width) / 2,
-            plane.y + (imgObj?.height || plane.height) / 2,
-            (imgObj?.width || plane.width) * 0.6,
-            0, Math.PI * 2
-          );
-          ctx.fill();
-          ctx.restore();
-        } else if (plane.type === 'outOfGas') {
-          ctx.save();
-          ctx.globalAlpha = 0.10;
-          ctx.fillStyle = '#ff4444';
-          ctx.beginPath();
-          ctx.arc(
-            plane.x + (imgObj?.width || plane.width) / 2,
-            plane.y + (imgObj?.height || plane.height) / 2,
-            (imgObj?.width || plane.width) * 0.6,
-            0, Math.PI * 2
-          );
-          ctx.fill();
-          ctx.restore();
-        } else if (plane.type === 'ghost') {
-          ctx.save();
-          ctx.globalAlpha = 0.13;
-          ctx.fillStyle = '#00ffff';
-          ctx.beginPath();
-          ctx.arc(
-            plane.x + (imgObj?.width || plane.width) / 2,
-            plane.y + (imgObj?.height || plane.height) / 2,
-            (imgObj?.width || plane.width) * 0.6,
-            0, Math.PI * 2
-          );
-          ctx.fill();
-          ctx.restore();
-        }
-
-        // Düşme animasyonu ve efektleri
-        if (plane.isFalling) {
-          const fallSpeed = plane.type === 'ghost' ? GHOST_FALL_SPEED :
-                           plane.type === 'overloaded' ? OVERLOADED_FALL_SPEED :
-                           plane.type === 'outOfGas' ? OUT_OF_GAS_FALL_SPEED :
-                           FALL_SPEED;
-          plane.y += fallSpeed;
-
-          // Düşme sırasında alev ve duman efekti (overloaded ve outOfGas için)
-          if (plane.type === 'overloaded' || plane.type === 'outOfGas') {
+        // Turret'leri çiz
+        turrets.forEach(turret => {
+          try {
+            const turretImg = turretImgs[turret.type];
+            const x = turret.x;
+            const y = turret.y;
+            
+            if (turretImg?.img) {
+              ctx.drawImage(turretImg.img, x, y, turretImg.width, turretImg.height);
+            } else {
+              // Fallback görsel
+              ctx.fillStyle = '#ff0000';
+              ctx.fillRect(x, y, 80, 80);
+              ctx.fillStyle = '#fff';
+              ctx.fillText(turret.type, x, y + 40);
+            }
+            
+            // Turret tipini yaz
             ctx.save();
-            ctx.globalAlpha = 0.5;
-            const flameX = plane.x + (imgObj?.width || plane.width) / 2;
-            const flameY = plane.y + (imgObj?.height || plane.height);
-            const flameSize = 12 + Math.sin(Date.now() / 200) * 2;
-            const gradient = ctx.createRadialGradient(
-              flameX, flameY, 0,
-              flameX, flameY, flameSize
-            );
-            gradient.addColorStop(0, plane.type === 'overloaded' ? '#ff6600' : '#ff0000');
-            gradient.addColorStop(0.5, plane.type === 'overloaded' ? '#ff3300' : '#cc0000');
-            gradient.addColorStop(1, 'rgba(255, 51, 0, 0)');
-            ctx.beginPath();
-            ctx.arc(flameX, flameY, flameSize, 0, Math.PI * 2);
-            ctx.fillStyle = gradient;
-            ctx.shadowColor = plane.type === 'overloaded' ? '#ff3300' : '#ff0000';
+            ctx.font = 'bold 24px VT323, monospace';
+            ctx.fillStyle = '#00ff00';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#00ff00';
             ctx.shadowBlur = 8;
-            ctx.fill();
-            // Duman efekti
-            const smokeX = flameX;
-            const smokeY = flameY + 4;
-            const smokeSize = 7 + Math.sin(Date.now() / 300) * 1.5;
-            const smokeGradient = ctx.createRadialGradient(
-              smokeX, smokeY, 0,
-              smokeX, smokeY, smokeSize
+            ctx.fillText(
+              turret.type === 'Contract Creation' ? 'Contract' : turret.type,
+              x + (turretImg?.width || 80) / 2,
+              y + (turretImg?.height || 80) + 32
             );
-            smokeGradient.addColorStop(0, 'rgba(100, 100, 100, 0.15)');
-            smokeGradient.addColorStop(1, 'rgba(100, 100, 100, 0)');
-            ctx.beginPath();
-            ctx.arc(smokeX, smokeY, smokeSize, 0, Math.PI * 2);
-            ctx.fillStyle = smokeGradient;
-            ctx.shadowColor = 'rgba(100, 100, 100, 0.2)';
-            ctx.shadowBlur = 3;
-            ctx.fill();
             ctx.restore();
+          } catch (error) {
+            console.error('Turret çizim hatası:', error);
           }
-        } else {
-          // Normal uçuş hareketi
-          const moveSpeed = plane.type === 'ghost' ? GHOST_PLANE_SPEED :
-                           plane.type === 'overloaded' ? OVERLOADED_PLANE_SPEED :
-                           plane.type === 'outOfGas' ? OUT_OF_GAS_PLANE_SPEED :
-                           PLANE_SPEED;
+        });
 
-          if (plane.direction === 'left') {
-            plane.x -= moveSpeed;
-          } else if (plane.direction === 'right') {
-            plane.x += moveSpeed;
+        // Uçakları çiz
+        planes.forEach(plane => {
+          try {
+            // Düşme başlatma kontrolü
+            if (!plane.isFalling && (plane.type === 'outOfGas' || plane.type === 'overloaded')) {
+              const startTime = plane.type === 'outOfGas' ? plane.outOfGasTimestamp : plane.overloadedStartTime;
+              if (startTime && Date.now() - startTime > plane.fallDelay) {
+                plane.isFalling = true;
+                plane.fallStartTime = Date.now();
+                // Düşme açısı blockNumber'ın tek/çiftliğine göre belirleniyor
+                if (plane.blockNumber % 2 === 0) {
+                  // Çift bloklar (sağdan çıkanlar) sola açılı düşsün
+                  plane.fallAngle = 180 - (MIN_FALL_ANGLE + Math.random() * (MAX_FALL_ANGLE - MIN_FALL_ANGLE));
+                } else {
+                  // Tek bloklar (soldan çıkanlar) sağa açılı düşsün
+                  plane.fallAngle = MIN_FALL_ANGLE + Math.random() * (MAX_FALL_ANGLE - MIN_FALL_ANGLE);
+                }
+                // Rastgele düşme hızı belirle
+                plane.fallSpeed = FALL_SPEED * (1 + (Math.random() * 2 - 1) * FALL_SPEED_VARIATION);
+                // Başlangıç rotasyonu
+                plane.rotation = 0;
+              }
+            }
+
+            // Uçak görselini seç
+            let imgObj;
+            if (plane.isFalling) {
+              if (plane.planeType === 'plane1') {
+                imgObj = plane1DamagedImg || plane1Img;
+              } else {
+                imgObj = plane2DamagedImg || plane2Img;
+              }
+            } else {
+              imgObj = plane.planeType === 'plane1' ? plane1Img : plane2Img;
+            }
+
+            // Uçağı çiz
+            ctx.save();
+            if (plane.isFalling) {
+              // Düşme sırasında açıyı ve rotasyonu güncelle
+              if (plane.fallAngle) {
+                plane.fallAngle += (Math.random() * 2 - 1) * FALL_ANGLE_VARIATION;
+                // Sola açılı atanmışsa (fallAngle > 90), 102-143 aralığında tut
+                if (plane.fallAngle > 90) {
+                  plane.fallAngle = Math.max(180 - MAX_FALL_ANGLE, Math.min(180 - MIN_FALL_ANGLE, plane.fallAngle));
+                } else { // Sağa açılı atanmışsa (fallAngle <= 90), 37-78 aralığında tut
+                  plane.fallAngle = Math.max(MIN_FALL_ANGLE, Math.min(MAX_FALL_ANGLE, plane.fallAngle));
+                }
+                plane.rotation += FALL_ROTATION_SPEED;
+              }
+
+              // Düşme hızını ve yönünü hesapla
+              const radians = (plane.fallAngle * Math.PI) / 180;
+              const fallSpeedX = Math.cos(radians) * plane.fallSpeed;
+              const fallSpeedY = Math.sin(radians) * plane.fallSpeed;
+
+              // Pozisyonu güncelle
+              plane.x += fallSpeedX;
+              plane.y += fallSpeedY;
+
+              // Düşen uçak için opaklık ve titreme
+              ctx.globalAlpha = 0.55;
+              const jitterX = Math.sin(Date.now() / 60 + plane.blockNumber) * 2;
+              const jitterY = Math.cos(Date.now() / 50 + plane.blockNumber) * 2;
+
+              // Rotasyonu uygula
+              ctx.translate(plane.x + (imgObj?.width || plane.width) / 2, plane.y + (imgObj?.height || plane.height) / 2);
+              ctx.rotate((plane.rotation * Math.PI) / 180);
+              ctx.translate(-(imgObj?.width || plane.width) / 2, -(imgObj?.height || plane.height) / 2);
+
+              if (imgObj?.img) {
+                ctx.drawImage(
+                  imgObj.img,
+                  jitterX,
+                  jitterY,
+                  imgObj.width || plane.width,
+                  imgObj.height || plane.height
+                );
+              } else {
+                ctx.fillStyle = '#888';
+                ctx.fillRect(jitterX, jitterY, plane.width, plane.height);
+              }
+            } else {
+              // Normal uçuş
+              ctx.globalAlpha = 1;
+              if (imgObj?.img) {
+                ctx.drawImage(
+                  imgObj.img,
+                  plane.x,
+                  plane.y,
+                  imgObj.width || plane.width,
+                  imgObj.height || plane.height
+                );
+              } else {
+                ctx.fillStyle = '#888';
+                ctx.fillRect(plane.x, plane.y, plane.width, plane.height);
+              }
+            }
+            ctx.restore();
+
+            // Uçak tipi etiketi ve blok numarası
+            ctx.save();
+            // Blok ve tx fontunu büyüt
+            ctx.font = 'bold 22px VT323, monospace';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#000';
+            ctx.shadowBlur = 4;
+            let labelColor = '#fff';
+            let typeLabel = '';
+            if (plane.type === 'overloaded') {
+              labelColor = '#ffcc00';
+              typeLabel = 'OVERLOADED';
+            } else if (plane.type === 'outOfGas') {
+              labelColor = '#ff4444';
+              typeLabel = 'OUT OF GAS';
+            } else if (plane.type === 'ghost') {
+              labelColor = '#00ffff';
+              typeLabel = 'GHOST';
+            } else if (plane.type === 'rescued' || plane.rescued) {
+              labelColor = '#00ff00';
+              typeLabel = 'RESCUED';
+            } else {
+              labelColor = '#00ff00';
+              typeLabel = 'NORMAL';
+            }
+            ctx.fillStyle = labelColor;
+            ctx.globalAlpha = 0.95;
+            ctx.fillText(
+              `#${plane.blockNumber} | tx: ${plane.transactionCount}`,
+              plane.x + (imgObj?.width || plane.width) / 2,
+              plane.y - 12
+            );
+            ctx.font = 'bold 16px VT323, monospace';
+            ctx.fillStyle = labelColor;
+            ctx.globalAlpha = 0.85;
+            ctx.fillText(
+              typeLabel,
+              plane.x + (imgObj?.width || plane.width) / 2,
+              plane.y + 10
+            );
+            ctx.restore();
+
+            // Kurtarılan uçaklar için yeşil glow efekti
+            if (plane.type === 'rescued' || plane.rescued) {
+              // Overloaded efekti gibi büyük hare
+              ctx.save();
+              ctx.globalAlpha = 0.12;
+              ctx.fillStyle = '#00ff00';
+              ctx.beginPath();
+              ctx.arc(
+                plane.x + (imgObj?.width || plane.width) / 2,
+                plane.y + (imgObj?.height || plane.height) / 2,
+                (imgObj?.width || plane.width) * 0.6,
+                0, Math.PI * 2
+              );
+              ctx.fill();
+              ctx.restore();
+            }
+
+            // Düşme animasyonu
+            if (plane.isFalling) {
+              const fallSpeed = plane.type === 'ghost' ? GHOST_FALL_SPEED :
+                               plane.type === 'overloaded' ? OVERLOADED_FALL_SPEED :
+                               plane.type === 'outOfGas' ? OUT_OF_GAS_FALL_SPEED :
+                               FALL_SPEED;
+              plane.y += fallSpeed;
+
+              // Alev ve duman efekti
+              if (plane.type === 'overloaded' || plane.type === 'outOfGas') {
+                ctx.save();
+                ctx.globalAlpha = 0.5;
+                const flameX = plane.x + (imgObj?.width || plane.width) / 2;
+                const flameY = plane.y + (imgObj?.height || plane.height);
+                const flameSize = 12 + Math.sin(Date.now() / 200) * 2;
+                const gradient = ctx.createRadialGradient(
+                  flameX, flameY, 0,
+                  flameX, flameY, flameSize
+                );
+                gradient.addColorStop(0, plane.type === 'overloaded' ? '#ff6600' : '#ff0000');
+                gradient.addColorStop(0.5, plane.type === 'overloaded' ? '#ff3300' : '#cc0000');
+                gradient.addColorStop(1, 'rgba(255, 51, 0, 0)');
+                ctx.beginPath();
+                ctx.arc(flameX, flameY, flameSize, 0, Math.PI * 2);
+                ctx.fillStyle = gradient;
+                ctx.shadowColor = plane.type === 'overloaded' ? '#ff3300' : '#ff0000';
+                ctx.shadowBlur = 8;
+                ctx.fill();
+                ctx.restore();
+              }
+            } else {
+              // Normal uçuş hareketi
+              const moveSpeed = plane.type === 'ghost' ? GHOST_PLANE_SPEED :
+                               plane.type === 'overloaded' ? OVERLOADED_PLANE_SPEED :
+                               plane.type === 'outOfGas' ? OUT_OF_GAS_PLANE_SPEED :
+                               PLANE_SPEED;
+
+              if (plane.direction === 'left') {
+                plane.x -= moveSpeed;
+              } else if (plane.direction === 'right') {
+                plane.x += moveSpeed;
+              }
+            }
+
+            // Ekrandan çıkma kontrolü - artık sadece x ekseninde kontrol ediyoruz
+            if (plane.x > canvasSize.width + PLANE_WIDTH || plane.x < -PLANE_WIDTH) {
+              return null;
+            }
+
+            // Yere çarpma kontrolü - artık y ekseninde sınır yok
+            if (plane.y > canvasSize.height + PLANE_HEIGHT && !plane.destroyedAt) {
+              plane.destroyedAt = Date.now();
+            }
+
+            // Gas kullanım göstergesi
+            const gasPercent = plane.gasRatio || 0;
+            const gasBarWidth = 60;
+            const gasBarHeight = 4;
+            const gasBarX = plane.x + (plane.width - gasBarWidth) / 2;
+            const gasBarY = plane.y + (plane.height || 0) + 10;
+
+            // Gas bar arka planı
+            ctx.fillStyle = '#333';
+            ctx.fillRect(gasBarX, gasBarY, gasBarWidth, gasBarHeight);
+
+            // Gas bar doluluk
+            const fillWidth = gasBarWidth * gasPercent;
+            ctx.fillStyle = gasPercent > 0.9 ? '#ff4444' : '#44ff44';
+            ctx.fillRect(gasBarX, gasBarY, fillWidth, gasBarHeight);
+
+            // Gas yüzdesi
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 20px monospace';
+            const currentImgObj = plane.planeType === 'plane1' ? plane1Img : plane2Img;
+            ctx.fillText(`Gas: ${Math.round(gasPercent * 100)}%`, plane.x + (currentImgObj?.width || plane.width)/2, plane.y + (currentImgObj?.height || plane.height) + 24);
+
+          } catch (error) {
+            console.error('Uçak işleme hatası:', error, plane);
           }
-        }
+        });
 
-        // Ekrandan çıkma kontrolü
-        if (plane.x > GAME_WIDTH + PLANE_WIDTH || plane.x < -PLANE_WIDTH) {
-          return null;
-        }
-
-        // Yere çarpma kontrolü
-        if (plane.y > GAME_HEIGHT && !plane.destroyedAt) {
-          plane.destroyedAt = Date.now();
-        }
-
-        // Gas kullanım göstergesi
-        const gasPercent = plane.gasRatio || 0;
-        const gasBarWidth = 60;
-        const gasBarHeight = 4;
-        const gasBarX = plane.x + (plane.width - gasBarWidth) / 2;
-        const gasBarY = plane.y + (plane.height || 0) + 10;
-
-        // Gas bar arka planı
-        ctx.fillStyle = '#333';
-        ctx.fillRect(gasBarX, gasBarY, gasBarWidth, gasBarHeight);
-
-        // Gas bar doluluk
-        const fillWidth = gasBarWidth * gasPercent;
-        ctx.fillStyle = gasPercent > 0.9 ? '#ff4444' : '#44ff44';
-        ctx.fillRect(gasBarX, gasBarY, fillWidth, gasBarHeight);
-
-        // Gas yüzdesi
-        ctx.fillStyle = '#fff';
-        ctx.textAlign = 'center';
-        ctx.font = 'bold 20px monospace';
-        const currentImgObj = plane.planeType === 'plane1' ? plane1Img : plane2Img;
-        ctx.fillText(`Gas: ${Math.round(gasPercent * 100)}%`, plane.x + (currentImgObj?.width || plane.width)/2, plane.y + (currentImgObj?.height || plane.height) + 24);
-
-        // Rescue animasyonu
-        const now = Date.now();
-        const isRescued = (plane) => plane.type === 'rescued' || rescuedPlanes.some(rp => rp.blockNumber === plane.blockNumber && now - rp.ts < RESCUE_ANIMATION_DURATION);
-        if (isRescued(plane)) {
-          ctx.save();
-          ctx.globalAlpha = 0.7;
-          ctx.beginPath();
-          ctx.arc(
-            plane.x + (imgObj?.width || plane.width) / 2,
-            plane.y + (imgObj?.height || plane.height) / 2,
-            (imgObj?.width || plane.width) * 0.7,
-            0, Math.PI * 2
-          );
-          ctx.fillStyle = 'rgba(0,255,80,0.35)';
-          ctx.shadowColor = '#00ff80';
-          ctx.shadowBlur = 18;
-          ctx.fill();
-          ctx.restore();
-          // "RESCUED" etiketi
-          ctx.save();
-          ctx.font = 'bold 20px VT323, monospace';
-          ctx.fillStyle = '#00ff80';
-          ctx.globalAlpha = 0.95;
-          ctx.textAlign = 'center';
-          ctx.shadowColor = '#00ff80';
-          ctx.shadowBlur = 10;
-          ctx.fillText('RESCUED', plane.x + (imgObj?.width || plane.width) / 2, plane.y + 10);
-          ctx.restore();
-        }
-      });
-
-      animationFrameId = requestAnimationFrame(gameLoop);
+        animationFrameId = requestAnimationFrame(gameLoop);
+      } catch (error) {
+        console.error('Game loop hatası:', error);
+      }
     };
 
     animationFrameId = requestAnimationFrame(gameLoop);
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [blocks, plane1Img, plane1DamagedImg, plane2Img, plane2DamagedImg, turrets, planes, turretImgs, rescuedPlanes]);
+  }, [blocks, plane1Img, plane1DamagedImg, plane2Img, plane2DamagedImg, turrets, planes, turretImgs, rescuedPlanes, canvasSize]);
 
   // Düşen uçakları 2 saniye sonra sil
   useEffect(() => {
@@ -1041,6 +1109,29 @@ const RetroPlane = ({ blocks, onReturn, txStats, events }) => {
     setRescuedPlanes(prev => [...prev, { blockNumber: plane.blockNumber, ts: Date.now() }]);
     setSelectedPlane(plane => plane ? { ...plane, type: 'rescued', status: 'rescued', isFalling: false } : plane);
   };
+
+  // Ekran boyutu değişince paneli otomatik kapat/aç
+  useEffect(() => {
+    function handleResize() {
+      const maxW = Math.min(window.innerWidth - 32, GAME_WIDTH);
+      const maxH = Math.min(window.innerHeight - 32, GAME_HEIGHT);
+      const ratio = GAME_WIDTH / GAME_HEIGHT;
+      let width = maxW;
+      let height = Math.round(width / ratio);
+      if (height > maxH) {
+        height = maxH;
+        width = Math.round(height * ratio);
+      }
+      setCanvasSize({ width, height });
+    }
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Sağ panelde rescued ve normal blokları ayır
+  const rescuedWings = planes.filter(p => p.type === 'rescued' || p.rescued);
+  const normalWings = planes.filter(p => p.type === 'normal');
 
   return (
     <div style={{ 
@@ -1163,12 +1254,12 @@ const RetroPlane = ({ blocks, onReturn, txStats, events }) => {
         {/* Arka plan görüntüsünü kaldırdık */}
         <canvas
           ref={canvasRef}
-          width={GAME_WIDTH}
-          height={GAME_HEIGHT}
+          width={canvasSize.width}
+          height={canvasSize.height}
           style={{
             display: 'block',
-            width: '100%',
-            height: '100%',
+            width: canvasSize.width,
+            height: canvasSize.height,
             imageRendering: 'pixelated',
             background: 'transparent',
             position: 'relative',
@@ -1178,34 +1269,108 @@ const RetroPlane = ({ blocks, onReturn, txStats, events }) => {
       </div>
 
       {/* Sağ panel: Damaged Wings Log */}
-      <Panel style={{ top: 115 }}>
-        <PanelTitle>DAMAGED WINGS LOG</PanelTitle>
-        {damagedWings.length === 0 && <div style={{color:'#888'}}>No wings downed yet.</div>}
-        {damagedWings.map(plane => (
-          <React.Fragment key={plane.blockNumber}>
-            <PanelRow onClick={() => setSelectedWing(selectedWing === plane.blockNumber ? null : plane.blockNumber)}>
-              <b>Wing #{plane.blockNumber}</b> — <span style={{color:'#ff0000'}}>DAMAGED</span><br/>
-              Hits Taken: <span style={{color:'#ffff00'}}>{plane.hitCount}/{plane.transactionCount}</span><br/>
-              Destroyed: <span style={{color:'#0ff'}}>{plane.destroyedAt ? new Date(plane.destroyedAt).toLocaleString() : '-'}</span>
-            </PanelRow>
-            {selectedWing === plane.blockNumber && (
-              <PanelDetail>
-                <b>Mission Debrief:</b><br/>
-                {blocks.find(b => Number(b.number) === Number(plane.blockNumber))?.transactions?.map((tx, i) => (
-                  <div key={tx.hash} style={{marginBottom:4}}>
-                    <span style={{color:'#0ff'}}>Hash:</span> 
-                    <a href={`https://testnet.monadexplorer.com/tx/${tx.hash}`} target="_blank" rel="noopener noreferrer" style={{color:'#00ff00', textDecoration:'underline', fontFamily:'monospace'}}>
-                      {tx.hash.slice(0,10)}...{tx.hash.slice(-6)}
-                    </a>
-                    <span style={{color:'#ff0', marginLeft:8}}>[{tx.type || 'Other'}]</span><br/>
-                    <span style={{color:'#ff0'}}>Timestamp:</span> {blocks.find(b => Number(b.number) === Number(plane.blockNumber))?.timestamp ? new Date(Number(blocks.find(b => Number(b.number) === Number(plane.blockNumber))?.timestamp)*1000).toLocaleString() : '-'}
-                  </div>
-                ))}
-              </PanelDetail>
-            )}
-          </React.Fragment>
-        ))}
-      </Panel>
+      <ResponsivePanel style={{ top: 115 }} $open={isRightPanelOpen}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <PanelTitle style={{fontSize: isRightPanelOpen ? 28 : 20, marginBottom: isRightPanelOpen ? 18 : 0}}>
+            {isRightPanelOpen ? 'BLOCK RADAR LOG' : ''}
+          </PanelTitle>
+          <button
+            style={{
+              background:'none',border:'none',color:'#00ff00',fontSize:28,cursor:'pointer',marginLeft:4,outline:'none',lineHeight:1
+            }}
+            onClick={()=>setIsRightPanelOpen(v=>!v)}
+            tabIndex={0}
+            aria-label={isRightPanelOpen ? 'Paneli küçült' : 'Paneli aç'}
+          >
+            {isRightPanelOpen ? '−' : '☰'}
+          </button>
+        </div>
+        {isRightPanelOpen && (
+          <>
+            {/* RESCUED BLOKLAR */}
+            <div style={{margin:'8px 0 4px 0', color:'#00ff00', fontWeight:'bold', fontSize:20}}>RESCUED BLOCKS LOG</div>
+            {rescuedWings.length === 0 && <div style={{color:'#888'}}>No rescued blocks yet.</div>}
+            {rescuedWings.map((plane, idx) => (
+              <React.Fragment key={plane.blockNumber + '-' + (plane.destroyedAt || idx)}>
+                <PanelRow onClick={() => setSelectedRescuedBlock(selectedRescuedBlock === plane.blockNumber ? null : plane.blockNumber)} style={{borderLeft:'4px solid #00ff00', cursor:'pointer'}}>
+                  <b>Block #{plane.blockNumber}</b> <span style={{color:'#00ff00',marginLeft:8}}>RESCUED</span><br/>
+                  Tx: <span style={{color:'#ffff00'}}>{plane.transactionCount}</span><br/>
+                  {plane.timestamp && <span>Time: {new Date(Number(plane.timestamp)*1000).toLocaleString()}</span>}
+                </PanelRow>
+                {selectedRescuedBlock === plane.blockNumber && (
+                  <PanelDetail>
+                    <b>Block Transactions:</b><br/>
+                    {blocks.find(b => Number(b.number) === Number(plane.blockNumber))?.transactions?.map((tx, i) => (
+                      <div key={tx.hash} style={{marginBottom:4}}>
+                        <span style={{color:'#0ff'}}>Hash:</span> 
+                        <a href={`https://testnet.monadexplorer.com/tx/${tx.hash}`} target="_blank" rel="noopener noreferrer" style={{color:'#00ff00', textDecoration:'underline', fontFamily:'monospace'}}>
+                          {tx.hash.slice(0,10)}...{tx.hash.slice(-6)}
+                        </a>
+                        <span style={{color:'#ff0', marginLeft:8}}>[{tx.type || 'Other'}]</span><br/>
+                      </div>
+                    ))}
+                    <span style={{color:'#aaa'}}>Timestamp: {plane.timestamp ? new Date(Number(plane.timestamp)*1000).toLocaleString() : '-'}</span>
+                  </PanelDetail>
+                )}
+              </React.Fragment>
+            ))}
+            {/* NORMAL BLOKLAR */}
+            <div style={{margin:'16px 0 4px 0', color:'#fff', fontWeight:'bold', fontSize:20}}>NORMAL BLOCKS LOG</div>
+            {normalWings.length === 0 && <div style={{color:'#888'}}>No normal blocks yet.</div>}
+            {normalWings.map((plane, idx) => (
+              <React.Fragment key={plane.blockNumber + '-' + (plane.destroyedAt || idx)}>
+                <PanelRow onClick={() => setSelectedNormalBlock(selectedNormalBlock === plane.blockNumber ? null : plane.blockNumber)} style={{cursor:'pointer'}}>
+                  <b>Block #{plane.blockNumber}</b> <span style={{color:'#00ff00',marginLeft:8}}>NORMAL</span><br/>
+                  Tx: <span style={{color:'#ffff00'}}>{plane.transactionCount}</span><br/>
+                  {plane.timestamp && <span>Time: {new Date(Number(plane.timestamp)*1000).toLocaleString()}</span>}
+                </PanelRow>
+                {selectedNormalBlock === plane.blockNumber && (
+                  <PanelDetail>
+                    <b>Block Transactions:</b><br/>
+                    {blocks.find(b => Number(b.number) === Number(plane.blockNumber))?.transactions?.map((tx, i) => (
+                      <div key={tx.hash} style={{marginBottom:4}}>
+                        <span style={{color:'#0ff'}}>Hash:</span> 
+                        <a href={`https://testnet.monadexplorer.com/tx/${tx.hash}`} target="_blank" rel="noopener noreferrer" style={{color:'#00ff00', textDecoration:'underline', fontFamily:'monospace'}}>
+                          {tx.hash.slice(0,10)}...{tx.hash.slice(-6)}
+                        </a>
+                        <span style={{color:'#ff0', marginLeft:8}}>[{tx.type || 'Other'}]</span><br/>
+                      </div>
+                    ))}
+                    <span style={{color:'#aaa'}}>Timestamp: {plane.timestamp ? new Date(Number(plane.timestamp)*1000).toLocaleString() : '-'}</span>
+                  </PanelDetail>
+                )}
+              </React.Fragment>
+            ))}
+            {/* DAMAGED BLOKLAR */}
+            <div style={{margin:'16px 0 4px 0', color:'#ff4444', fontWeight:'bold', fontSize:20}}>DAMAGED WINGS LOG</div>
+            {damagedWings.length === 0 && <div style={{color:'#888'}}>No wings downed yet.</div>}
+            {damagedWings.map((plane, idx) => (
+              <React.Fragment key={plane.blockNumber + '-' + (plane.destroyedAt || idx)}>
+                <PanelRow onClick={() => setSelectedWing(selectedWing === plane.blockNumber ? null : plane.blockNumber)}>
+                  <b>Wing #{plane.blockNumber}</b> — <span style={{color:'#ff0000'}}>DAMAGED</span><br/>
+                  Hits Taken: <span style={{color:'#ffff00'}}>{plane.hitCount}/{plane.transactionCount}</span><br/>
+                  Destroyed: <span style={{color:'#0ff'}}>{plane.destroyedAt ? new Date(plane.destroyedAt).toLocaleString() : '-'}</span>
+                </PanelRow>
+                {selectedWing === plane.blockNumber && (
+                  <PanelDetail>
+                    <b>Mission Debrief:</b><br/>
+                    {blocks.find(b => Number(b.number) === Number(plane.blockNumber))?.transactions?.map((tx, i) => (
+                      <div key={tx.hash} style={{marginBottom:4}}>
+                        <span style={{color:'#0ff'}}>Hash:</span> 
+                        <a href={`https://testnet.monadexplorer.com/tx/${tx.hash}`} target="_blank" rel="noopener noreferrer" style={{color:'#00ff00', textDecoration:'underline', fontFamily:'monospace'}}>
+                          {tx.hash.slice(0,10)}...{tx.hash.slice(-6)}
+                        </a>
+                        <span style={{color:'#ff0', marginLeft:8}}>[{tx.type || 'Other'}]</span><br/>
+                        <span style={{color:'#ff0'}}>Timestamp:</span> {blocks.find(b => Number(b.number) === Number(plane.blockNumber))?.timestamp ? new Date(Number(blocks.find(b => Number(b.number) === Number(plane.blockNumber))?.timestamp)*1000).toLocaleString() : '-'}
+                      </div>
+                    ))}
+                  </PanelDetail>
+                )}
+              </React.Fragment>
+            ))}
+          </>
+        )}
+      </ResponsivePanel>
 
       {/* Sol üstte, bilgi panelinin hemen altında seçili uçak paneli */}
       <SelectedPlanePanel selectedPlane={selectedPlane} handleRescue={handleRescue} />
