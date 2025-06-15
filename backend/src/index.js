@@ -5,11 +5,20 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import http from 'http';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+const app = express();
+const server = http.createServer(app);
+
+const PORT = process.env.PORT || 8080;
+
+// WebSocket sunucusunu HTTP sunucusuna bağla
+const wss = new WebSocketServer({ server });
 
 // RPC URL'lerini kontrol et
 const RPC_POOL = [
@@ -46,13 +55,6 @@ const createProvider = () => {
   const provider = new ethers.JsonRpcProvider(rpc);
   return provider;
 };
-
-// WebSocket sunucusu
-const WS_PORT = process.env.WS_PORT || 8080;
-const wss = new WebSocketServer({ 
-  port: Number(WS_PORT),
-  perMessageDeflate: false // Performans için
-});
 
 // Bağlı istemcileri takip et
 const clients = new Set();
@@ -248,20 +250,17 @@ const analyzeTransactionType = async (tx, provider) => {
 };
 
 // Express sunucusu
-const app = express();
 app.use(cors());
 app.use(express.json());
 
 // WebSocket sunucusunu başlat
 wss.on('listening', () => {
-  console.log(`WebSocket sunucusu ${WS_PORT} portunda başlatıldı`);
+  console.log(`WebSocket sunucusu ${PORT} portunda başlatıldı`);
 });
 
 // Blok polling'i başlat
 setInterval(pollBlocks, BLOCK_POLL_INTERVAL);
 
-// Express sunucusunu başlat
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Express sunucusu ${PORT} portunda başlatıldı`);
+server.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
 }); 
