@@ -1,15 +1,45 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import styled from 'styled-components';
-import { ethers } from 'ethers';
+import { createPublicClient, http, defineChain } from 'viem';
 import RetroPlane from "./RetroPlane";
 
-// Önce fonksiyonu tanımla
-const createIsolatedProvider = () => {
-  const provider = new ethers.JsonRpcProvider('https://monad-testnet.g.alchemy.com/v2/TQTWv1mrWxh8m5RuVRRDj');
-  return provider;
-};
-// Sonra provider'ı oluştur
-const provider = createIsolatedProvider();
+const rpcUrls = [
+  process.env.REACT_APP_ALCHEMY_RPC_URL_1,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_2,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_3,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_4,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_5,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_6,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_7,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_8,
+].filter(Boolean);
+
+const monadAlchemy = defineChain({
+  id: 9090,
+  name: 'Monad Testnet (Alchemy)',
+  network: 'monad-testnet',
+  nativeCurrency: {
+    name: 'tMND',
+    symbol: 'tMND',
+    decimals: 18,
+  },
+  rpcUrls: {
+    default: {
+      http: rpcUrls,
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: 'Monad Explorer',
+      url: 'https://explorer.monad.xyz',
+    },
+  },
+});
+
+const client = createPublicClient({
+  chain: monadAlchemy,
+  transport: http(rpcUrls),
+});
 
 const AppContainer = styled.div`
   background-color: #000;
@@ -48,7 +78,7 @@ const UpdateIndicator = styled.div`
   right: 10px;
   color: #00ff00;
   font-size: 0.8em;
-  opacity: ${props => props.isLoading ? 1 : 0};
+  opacity: ${props => props.$isLoading ? 1 : 0};
   transition: opacity 0.3s ease;
 `;
 
@@ -132,6 +162,13 @@ const RetroButton = styled.button`
   }
 `;
 
+const getRandomPlaneType = () => {
+  const types = ['fighter', 'bomber', 'cargo'];
+  return types[Math.floor(Math.random() * types.length)];
+};
+
+const DEBUG = process.env.NODE_ENV !== 'production';
+
 function App() {
   const [blockData, setBlockData] = useState(null);
   const [error, setError] = useState(null);
@@ -151,190 +188,207 @@ function App() {
   const [ws, setWs] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  useEffect(() => {
-    const socket = new WebSocket('ws://localhost:8080');
-    
-    socket.onopen = () => {
-      console.log('WebSocket bağlantısı kuruldu');
-      setIsConnected(true);
-    };
+  // Transaction tipini analiz et (viem ile)
+  const analyzeTransactionType = (tx) => {
+    if (!tx) return 'Other';
+    if (!tx.to) {
+      if (tx.input && tx.input.startsWith('0x60806040')) return 'NFT Mint';
+      return 'Contract Creation';
+    }
+    if (tx.value > 0n && tx.input === '0x') return 'Transfer';
+    if (tx.input && (
+      tx.input.startsWith('0x38ed1739') ||
+      tx.input.startsWith('0x18cbafe5') ||
+      tx.input.startsWith('0x8803dbee') ||
+      tx.input.startsWith('0x5c11d795')
+    )) return 'DEX Swap';
+    return 'Other';
+  };
 
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      //console.log('WebSocket mesajı alındı:', data);
-      window.requestAnimationFrame(() => {
-        if (data.type === 'block') {
-          const { block, stats } = data.data;
-          setBlockData({
-            blockNumber: Number(block.number),
-            timestamp: new Date(Number(block.timestamp) * 1000).toLocaleString(),
-            transactions: block.transactions.length,
-            gasUsed: block.gasUsed.toString(),
-            gasLimit: block.gasLimit.toString(),
-            hash: block.hash,
-            baseFeePerGas: block.baseFeePerGas ? block.baseFeePerGas.toString() : '0',
-            miner: block.miner,
-            parentHash: block.parentHash
-          });
-          setTxStats(stats);
-          setBlocks(prev => {
-            const newBlockNumber = Number(block.number);
-            const lastBlockNumber = prev.length > 0 ? Number(prev[prev.length - 1].number) : 0;
-            if (newBlockNumber <= lastBlockNumber) return prev;
-            return [...prev, { ...block, number: newBlockNumber }];
-          });
-        } else if (data.type === 'pendingTxs') {
-          //console.log('Pending transaction alındı:', data.data);
-          // Pending transaction'ları işle
-          const pendingTxs = data.data;
-          // Burada pending tx'leri işleyebilirsiniz
-        }
-      });
-    };
-
-    socket.onerror = (error) => {
-      console.error('WebSocket hatası:', JSON.stringify(error));
-      setIsConnected(false);
-    };
-
-    socket.onclose = () => {
-      console.log('WebSocket bağlantısı kesildi');
-      setIsConnected(false);
-      // 5 saniye sonra yeniden bağlanmayı dene
-      setTimeout(() => {
-        setWs(new WebSocket('ws://localhost:8080'));
-      }, 5000);
-    };
-
-    setWs(socket);
-
-    return () => {
-      socket.close();
-    };
-  }, []);
-
-  // Transaction tipini analiz et
-  const analyzeTransactionType = async (txHash) => {
+  // Blok verilerini güncelle
+  const handleNewBlock = (data) => {
     try {
-      const tx = await provider.getTransaction(txHash);
-      if (!tx) return 'Other';
+      const parsed = JSON.parse(data);
+      // Her zaman gerçek blok objesini kullan
+      const blockObj = parsed.data?.block || parsed.block || parsed.data || parsed;
+      const statsData = parsed.data?.stats || parsed.stats || null;
 
-      // Transfer işlemi kontrolü
-      if (!tx.data || tx.data === '0x') {
-        return 'Transfer';
+      setBlockData(blockObj);
+
+      setBlocks(prevBlocks => {
+        if (prevBlocks.some(b => b.number === blockObj.number)) return prevBlocks;
+        const newBlocks = [...prevBlocks, blockObj];
+        return newBlocks.length > 100 ? newBlocks.slice(-100) : newBlocks;
+      });
+
+      setLastBlockNumber(blockObj.number);
+      setLastUpdate(new Date());
+      setIsLoading(false);
+
+      if (statsData) {
+        setTxStats(statsData);
+      } else if (blockObj.transactions) {
+        const newStats = { ...txStats };
+        blockObj.transactions.forEach(tx => {
+          const txType = analyzeTransactionType(tx);
+          newStats[txType] = (newStats[txType] || 0) + 1;
+        });
+        setTxStats(newStats);
       }
 
-      // Contract Creation kontrolü
-      if (!tx.to) {
-        // NFT Mint kontrolü (basit ERC721/1155 signature)
-        if (tx.data && tx.data.startsWith('0x60806040')) {
-          return 'NFT Mint';
-        }
-        return 'Contract Creation';
-      }
+      const newEvent = {
+        id: Date.now(),
+        type: 'block',
+        message: `New block: #${blockObj.number}`,
+        timestamp: new Date()
+      };
+      setEvents(prevEvents => [...prevEvents, newEvent]);
 
-      // DEX Swap kontrolü (Uniswap/PancakeSwap gibi router fonksiyon imzaları)
-      if (tx.data && (
-        tx.data.startsWith('0x38ed1739') || // swapExactTokensForTokens
-        tx.data.startsWith('0x18cbafe5') || // swapExactETHForTokens
-        tx.data.startsWith('0x8803dbee') || // swapTokensForExactTokens
-        tx.data.startsWith('0x5c11d795')    // swapETHForExactTokens
-      )) {
-        return 'DEX Swap';
+      if (DEBUG) {
+        console.log('New block received:', blockObj);
+        console.log('blockData (raw):', blockObj);
+        console.log('blockData.number:', blockObj.number);
+        console.log('blockData.timestamp:', blockObj.timestamp);
+        console.log('blockData.gasUsed:', blockObj.gasUsed);
+        console.log('blockData.gasLimit:', blockObj.gasLimit);
       }
-
-      // NFT Mint kontrolü (OpenSea/standart mint fonksiyon imzaları)
-      if (tx.data && (
-        tx.data.startsWith('0x1249c58b') || // mint(address,uint256)
-        tx.data.startsWith('0x40c10f19')    // mint(address,uint256)
-      )) {
-        return 'NFT Mint';
-      }
-
-      return 'Other';
-    } catch (err) {
-      console.warn('Error analyzing transaction:', JSON.stringify(err));
-      return 'Other';
+    } catch (error) {
+      if (DEBUG) console.error('Block processing error:', error);
+      setError('Error processing block data');
     }
   };
 
-  if (showRetro) {
-    return <RetroPlane blocks={blocks} onReturn={() => setShowRetro(false)} txStats={txStats} events={events} />;
-  }
+  // WebSocket bağlantısı
+  useEffect(() => {
+    const connectWebSocket = () => {
+      const ws = new WebSocket('ws://localhost:8080');
+      
+      ws.onopen = () => {
+        console.log('WebSocket connection established');
+        setIsConnected(true);
+        setError(null);
+      };
 
-  if (error) {
-    return (
-      <div>
-        <RetroButton onClick={() => setShowRetro(true)}>
-          GO TO RETRO PLANE
-        </RetroButton>
-        <AppContainer>
-          <Title>MONAD TESTNET BLOCK EXPLORER</Title>
-          <Terminal>
-            <ErrorBox>
-              <h2>Error</h2>
-              <p>{typeof error === 'string' ? error : JSON.stringify(error)}</p>
-              <p>Last update: {lastUpdate.toLocaleTimeString()}</p>
-            </ErrorBox>
-          </Terminal>
-        </AppContainer>
-      </div>
-    );
-  }
+      ws.onmessage = (event) => {
+        handleNewBlock(event.data);
+      };
 
-  if (!blockData) {
-    return (
-      <div>
-        <RetroButton onClick={() => setShowRetro(true)}>
-          GO TO RETRO PLANE
-        </RetroButton>
-        <AppContainer>
-          <Title>MONAD TESTNET BLOCK EXPLORER</Title>
-          <Terminal>
-            <LoadingBox>
-              <h2>Loading...</h2>
-              <p>Getting block data...</p>
-            </LoadingBox>
-          </Terminal>
-        </AppContainer>
-      </div>
-    );
-  }
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setError('WebSocket connection error');
+        setIsConnected(false);
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket connection closed');
+        setIsConnected(false);
+        setTimeout(connectWebSocket, 1000);
+      };
+
+      setWs(ws);
+    };
+
+    connectWebSocket();
+
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+    };
+  }, []);
+
+  // Performans için memoization
+  const memoizedBlockData = useMemo(() => ({
+    number: blockData?.number,
+    hash: blockData?.hash,
+    parentHash: blockData?.parentHash,
+    timestamp: blockData?.timestamp,
+    transactionCount: blockData?.transactions?.length || 0,
+    gasUsed: blockData?.gasUsed,
+    gasLimit: blockData?.gasLimit,
+    baseFeePerGas: blockData?.baseFeePerGas,
+    miner: blockData?.miner
+  }), [blockData]);
+
+  // blockData'yı güvenli şekilde normalize et
+  const safeBlockData = blockData ? {
+    number: blockData.number ?? '-',
+    timestamp: blockData.timestamp ? new Date(Number(blockData.timestamp) * 1000).toLocaleString() : '-',
+    transactionCount: Array.isArray(blockData.transactions) ? blockData.transactions.length : 0,
+    gasUsed: blockData.gasUsed ? blockData.gasUsed.toString() : '-',
+    gasLimit: blockData.gasLimit ? blockData.gasLimit.toString() : '-',
+    baseFeePerGas: blockData.baseFeePerGas ? blockData.baseFeePerGas.toString() : '-'
+  } : {};
 
   return (
-    <div>
-      <RetroButton onClick={() => setShowRetro(true)}>
-        GO TO RETRO PLANE
+    <AppContainer>
+      <RetroButton onClick={() => setShowRetro(!showRetro)}>
+        {showRetro ? 'SHOW TERMINAL' : 'LAUNCH RETRO MODE'}
       </RetroButton>
-      <AppContainer>
-        <Title>MONAD TESTNET BLOCK EXPLORER</Title>
-        <Terminal>
-          <DataDisplay>
-            <UpdateIndicator isLoading={isLoading}>Updating...</UpdateIndicator>
-            <p>Block Number: {blockData?.blockNumber}</p>
-            <p>Block Hash: {blockData?.hash}</p>
-            <p>Parent Hash: {blockData?.parentHash}</p>
-            <p>Timestamp: {blockData?.timestamp}</p>
-            <p>Transactions: {blockData?.transactions}</p>
-            <p>Gas Used: {blockData?.gasUsed}</p>
-            <p>Gas Limit: {blockData?.gasLimit}</p>
-            <p>Base Fee: {blockData?.baseFeePerGas} wei</p>
-            <p>Miner: {blockData?.miner}</p>
-            <p>Son Güncelleme: {lastUpdate.toLocaleTimeString()}</p>
-          </DataDisplay>
 
-          <TransactionStats>
-            <StatTitle>ANALYSIS OF TRANSACTION TYPES</StatTitle>
-            {Object.entries(txStats).map(([type, count]) => (
-              <StatItem key={type}>
-                <StatLabel>{type}</StatLabel>
-                <StatValue>{count}</StatValue>
-              </StatItem>
-            ))}
-          </TransactionStats>
-        </Terminal>
-      </AppContainer>
-    </div>
+      {showRetro ? (
+        <RetroPlane 
+          blocks={blocks} 
+          onReturn={() => setShowRetro(false)} 
+          txStats={txStats} 
+          events={events} 
+        />
+      ) : (
+        <>
+          <Title>MONAD BLOCK EXPLORER</Title>
+          
+          {error && <ErrorBox>{error}</ErrorBox>}
+          
+          {isLoading || !blockData ? (
+            <LoadingBox>INITIALIZING BLOCK DATA...</LoadingBox>
+          ) : (
+            <>
+              <Terminal>
+                <DataDisplay>
+                  <UpdateIndicator $isLoading={isLoading}>
+                    Last Update: {lastUpdate.toLocaleTimeString()}
+                  </UpdateIndicator>
+                  <StatItem>
+                    <StatLabel>Block Number:</StatLabel>
+                    <StatValue>{safeBlockData.number}</StatValue>
+                  </StatItem>
+                  <StatItem>
+                    <StatLabel>Timestamp:</StatLabel>
+                    <StatValue>{safeBlockData.timestamp}</StatValue>
+                  </StatItem>
+                  <StatItem>
+                    <StatLabel>Transaction Count:</StatLabel>
+                    <StatValue>{safeBlockData.transactionCount}</StatValue>
+                  </StatItem>
+                  <StatItem>
+                    <StatLabel>Gas Used:</StatLabel>
+                    <StatValue>{safeBlockData.gasUsed}</StatValue>
+                  </StatItem>
+                  <StatItem>
+                    <StatLabel>Gas Limit:</StatLabel>
+                    <StatValue>{safeBlockData.gasLimit}</StatValue>
+                  </StatItem>
+                  <StatItem>
+                    <StatLabel>Base Fee:</StatLabel>
+                    <StatValue>{safeBlockData.baseFeePerGas}</StatValue>
+                  </StatItem>
+                </DataDisplay>
+
+                <TransactionStats>
+                  <StatTitle>TRANSACTION ANALYSIS</StatTitle>
+                  {Object.entries(txStats || {}).map(([type, count]) => (
+                    <StatItem key={type}>
+                      <StatLabel>{type}:</StatLabel>
+                      <StatValue>{typeof count === 'number' ? count : 0}</StatValue>
+                    </StatItem>
+                  ))}
+                </TransactionStats>
+              </Terminal>
+            </>
+          )}
+        </>
+      )}
+    </AppContainer>
   );
 }
 

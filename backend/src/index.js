@@ -11,26 +11,40 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// RPC havuzu
+// RPC URL'lerini kontrol et
 const RPC_POOL = [
-  process.env.RPC_1,
-  process.env.RPC_2,
-  process.env.RPC_3,
-  process.env.RPC_4,
-  process.env.RPC_5
+  process.env.REACT_APP_ALCHEMY_RPC_URL_1,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_2,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_3,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_4,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_5,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_6,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_7,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_8
 ].filter(Boolean);
+
+if (RPC_POOL.length === 0) {
+  console.error('HATA: Hiçbir RPC URL\'si bulunamadı. Lütfen .env dosyasını kontrol edin.');
+  process.exit(1);
+}
+
+console.log('Kullanılabilir RPC URL\'leri:', RPC_POOL);
 
 let currentRpcIndex = 0;
 
 // RPC seçici
 const getNextRpc = () => {
   currentRpcIndex = (currentRpcIndex + 1) % RPC_POOL.length;
-  return RPC_POOL[currentRpcIndex];
+  const rpc = RPC_POOL[currentRpcIndex];
+  console.log('Seçilen RPC:', rpc);
+  return rpc;
 };
 
 // Provider oluşturucu
 const createProvider = () => {
-  return new ethers.JsonRpcProvider(getNextRpc());
+  const rpc = getNextRpc();
+  const provider = new ethers.JsonRpcProvider(rpc);
+  return provider;
 };
 
 // WebSocket sunucusu
@@ -71,57 +85,97 @@ const broadcast = (data) => {
   });
 };
 
+// Performans ayarları
+const BLOCK_POLL_INTERVAL = Number(process.env.BLOCK_POLL_INTERVAL) || 500;
+const MAX_TRANSACTIONS_PER_BLOCK = Number(process.env.MAX_TRANSACTIONS_PER_BLOCK) || 100;
+const WEBSOCKET_RECONNECT_DELAY = Number(process.env.WEBSOCKET_RECONNECT_DELAY) || 1000;
+const MAX_RETRIES = Number(process.env.MAX_RETRIES) || 3;
+const RATE_LIMIT_WINDOW = Number(process.env.RATE_LIMIT_WINDOW) || 60000;
+const RATE_LIMIT_MAX_REQUESTS = Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100;
+
+// Son işlenen blok numarasını takip et
+let lastProcessedBlockNumber = 0;
+
 // Blok polling
 const pollBlocks = async () => {
   const provider = createProvider();
+  let retryCount = 0;
   
-  try {
-    const blockNumber = await provider.getBlockNumber();
-    const block = await provider.getBlock(blockNumber, false); // sadece hash'ler gelir
-    let transactions = [];
+  while (retryCount < MAX_RETRIES) {
+    try {
+      const blockNumber = await provider.getBlockNumber();
+      
+      // Eğer yeni blok numarası son işlenenden küçük veya eşitse, işleme
+      if (blockNumber <= lastProcessedBlockNumber) {
+        console.log(`Blok ${blockNumber} zaten işlendi, atlanıyor...`);
+        break;
+      }
 
-    if (block && block.transactions && block.transactions.length > 0) {
-      // Her tx hash için detayları çek
-      transactions = await Promise.all(
-        block.transactions.map(async (txHash) => {
+      const block = await provider.getBlock(blockNumber, false);
+      
+      if (block) {
+        // Transaction analizi
+        const stats = {
+          'Transfer': 0,
+          'NFT Mint': 0,
+          'DEX Swap': 0,
+          'Contract Creation': 0,
+          'Other': 0
+        };
+
+        // Transaction'ları sınırla
+        const limitedTransactions = block.transactions.slice(0, MAX_TRANSACTIONS_PER_BLOCK);
+
+        // Transaction'ları paralel olarak işle
+        const txPromises = limitedTransactions.map(async (txHash) => {
           try {
-            return await provider.getTransaction(txHash);
+            const tx = await provider.getTransaction(txHash);
+            if (tx) {
+              const type = await analyzeTransactionType(tx, provider);
+              stats[type]++;
+              return { hash: tx.hash, type, from: tx.from, to: tx.to, value: tx.value.toString() };
+            }
+            return null;
           } catch (e) {
             return null;
           }
-        })
-      );
-      // null olanları filtrele
-      transactions = transactions.filter(Boolean);
+        });
+
+        // Tüm transaction'ları paralel olarak çek
+        const transactions = (await Promise.all(txPromises)).filter(Boolean);
+
+        // WebSocket üzerinden veriyi gönder
+        broadcast({
+          type: 'block',
+          data: {
+            block: {
+              number: block.number,
+              hash: block.hash,
+              parentHash: block.parentHash,
+              timestamp: block.timestamp,
+              gasUsed: block.gasUsed.toString(),
+              gasLimit: block.gasLimit.toString(),
+              baseFeePerGas: block.baseFeePerGas?.toString(),
+              miner: block.miner,
+              transactions: transactions
+            },
+            stats
+          }
+        });
+
+        // Son işlenen blok numarasını güncelle
+        lastProcessedBlockNumber = blockNumber;
+        console.log(`Blok ${blockNumber} işlendi`);
+        break;
+      }
+    } catch (error) {
+      console.error(`Blok polling hatası (deneme ${retryCount + 1}/${MAX_RETRIES}):`, error);
+      retryCount++;
+      if (retryCount === MAX_RETRIES) {
+        console.error('Maksimum deneme sayısına ulaşıldı');
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
-
-    if (block) {
-      // Transaction analizi
-      const stats = {
-        'Transfer': 0,
-        'NFT Mint': 0,
-        'DEX Swap': 0,
-        'Contract Creation': 0,
-        'Other': 0
-      };
-
-      // Transaction'ları analiz et
-      const txsWithType = await Promise.all(transactions.map(async (tx) => {
-        const type = await analyzeTransactionType(tx, provider);
-        stats[type]++;
-        return { ...tx, type };
-      }));
-
-      broadcast({
-        type: 'block',
-        data: {
-          block: { ...block, transactions: txsWithType }, // frontend'e type ile gönder
-          stats
-        }
-      });
-    }
-  } catch (error) {
-    console.error('Blok polling hatası:', error);
   }
 };
 
@@ -198,18 +252,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Sağlık kontrolü endpoint'i
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+// WebSocket sunucusunu başlat
+wss.on('listening', () => {
+  console.log(`WebSocket sunucusu ${WS_PORT} portunda başlatıldı`);
 });
 
-// Sunucuyu başlat
-app.listen(process.env.HTTP_PORT, () => {
-  console.log(`HTTP sunucusu ${process.env.HTTP_PORT} portunda çalışıyor`);
-});
+// Blok polling'i başlat
+setInterval(pollBlocks, BLOCK_POLL_INTERVAL);
 
-// Polling interval'larını başlat
-setInterval(pollBlocks, process.env.BLOCK_POLL_INTERVAL);
-//setInterval(pollPendingTxs, process.env.PENDING_TX_POLL_INTERVAL);
-
-console.log(`WebSocket sunucusu ${process.env.WS_PORT} portunda çalışıyor`); 
+// Express sunucusunu başlat
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Express sunucusu ${PORT} portunda başlatıldı`);
+}); 
