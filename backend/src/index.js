@@ -1,4 +1,3 @@
-import { ethers } from 'ethers';
 import { WebSocketServer } from 'ws';
 import express from 'express';
 import cors from 'cors';
@@ -52,8 +51,7 @@ const getNextRpc = () => {
 // Provider oluşturucu
 const createProvider = () => {
   const rpc = getNextRpc();
-  const provider = new ethers.JsonRpcProvider(rpc);
-  return provider;
+  return rpc;
 };
 
 // Bağlı istemcileri takip et
