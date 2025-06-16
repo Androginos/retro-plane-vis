@@ -261,7 +261,9 @@ function App() {
   // WebSocket bağlantısı
   useEffect(() => {
     const connectWebSocket = () => {
-      const ws = new WebSocket('ws://localhost:8080');
+      const wsUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:3001';
+      console.log('WebSocket URL:', wsUrl);
+      const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
         console.log('WebSocket connection established');

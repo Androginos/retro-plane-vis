@@ -1,4 +1,5 @@
-import { ethers } from 'ethers';
+/* global BigInt */
+import { createPublicClient, http as viemHttp } from 'viem';
 import { WebSocketServer } from 'ws';
 import express from 'express';
 import cors from 'cors';
@@ -6,6 +7,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
+import WebSocket from 'ws';
 
 dotenv.config();
 
@@ -13,15 +15,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
+app.use(cors());
+
 const server = http.createServer(app);
+const wss = new WebSocketServer({ 
+  server,
+  perMessageDeflate: false,
+  clientTracking: true
+});
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3001;
 
-// WebSocket sunucusunu HTTP sunucusuna bağla
-const wss = new WebSocketServer({ server });
-
-// RPC URL'lerini kontrol et
-const RPC_POOL = [
+// Alchemy RPC URL'leri
+const RPC_URLS = [
   process.env.REACT_APP_ALCHEMY_RPC_URL_1,
   process.env.REACT_APP_ALCHEMY_RPC_URL_2,
   process.env.REACT_APP_ALCHEMY_RPC_URL_3,
@@ -30,237 +36,283 @@ const RPC_POOL = [
   process.env.REACT_APP_ALCHEMY_RPC_URL_6,
   process.env.REACT_APP_ALCHEMY_RPC_URL_7,
   process.env.REACT_APP_ALCHEMY_RPC_URL_8
-].filter(Boolean);
+].filter(Boolean); // undefined olanları filtrele
 
-if (RPC_POOL.length === 0) {
+if (RPC_URLS.length === 0) {
   console.error('HATA: Hiçbir RPC URL\'si bulunamadı. Lütfen .env dosyasını kontrol edin.');
   process.exit(1);
 }
 
-console.log('Kullanılabilir RPC URL\'leri:', RPC_POOL);
+console.log('Kullanılabilir RPC URL\'leri:', RPC_URLS.length);
 
 let currentRpcIndex = 0;
-
-// RPC seçici
 const getNextRpc = () => {
-  currentRpcIndex = (currentRpcIndex + 1) % RPC_POOL.length;
-  const rpc = RPC_POOL[currentRpcIndex];
+  currentRpcIndex = (currentRpcIndex + 1) % RPC_URLS.length;
+  const rpc = RPC_URLS[currentRpcIndex];
   console.log('Seçilen RPC:', rpc);
   return rpc;
 };
 
-// Provider oluşturucu
-const createProvider = () => {
-  const rpc = getNextRpc();
-  const provider = new ethers.JsonRpcProvider(rpc);
-  return provider;
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 5000;
+
+// .env'den polling aralığı ve blok/saniye değeri
+const POLL_INTERVAL = parseInt(process.env.BLOCK_POLL_INTERVAL_MS || '250', 10); // ms
+const BLOCKS_PER_SECOND = parseInt(process.env.BLOCKS_PER_SECOND || '2', 10); // monad için 2
+
+// Monad chain tanımlaması
+const monadChain = {
+  id: 9090,
+  name: 'Monad',
+  network: 'monad',
+  nativeCurrency: {
+    name: 'Monad',
+    symbol: 'MND',
+    decimals: 18,
+  },
+  rpcUrls: {
+    default: {
+      http: RPC_URLS,
+    },
+    public: {
+      http: RPC_URLS,
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: 'Monad Explorer',
+      url: 'https://explorer.monad.xyz',
+    },
+  },
 };
 
-// Bağlı istemcileri takip et
-const clients = new Set();
+let lastProcessedBlock = { number: 0, hash: '' };
+let isPolling = false;
+let wsClients = new Set();
+
+// Linter ve ortam uyumu için yardımcı fonksiyon
+const toBigInt = (val) => {
+  if (typeof val === 'bigint') return val;
+  if (typeof val === 'number') return BigInt(val);
+  if (typeof val === 'string') {
+    if (val.endsWith('n')) return BigInt(val.slice(0, -1));
+    return BigInt(val);
+  }
+  throw new Error('toBigInt: Unsupported type');
+};
+
+// Viem client oluştur
+const createProvider = () => {
+  const rpcUrl = getNextRpc();
+  return createPublicClient({
+    chain: monadChain,
+    transport: viemHttp(rpcUrl)
+  });
+};
 
 // WebSocket bağlantı yönetimi
 wss.on('connection', (ws) => {
-  clients.add(ws);
-  console.log('Yeni istemci bağlandı');
+  console.log('Yeni WebSocket bağlantısı kuruldu');
+  wsClients.add(ws);
+
+  // Ping-pong mekanizması
+  const pingInterval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.ping();
+    }
+  }, 30000);
+
+  ws.on('pong', () => {
+    console.log('Pong alındı');
+  });
 
   ws.on('close', () => {
-    clients.delete(ws);
-    console.log('İstemci bağlantısı kesildi');
+    console.log('WebSocket bağlantısı kapandı');
+    clearInterval(pingInterval);
+    wsClients.delete(ws);
+  });
+
+  ws.on('error', (error) => {
+    console.error('WebSocket hatası:', error);
+    clearInterval(pingInterval);
+    wsClients.delete(ws);
   });
 });
-
-// BigInt'leri string'e çeviren replacer fonksiyonu
-function replacer(key, value) {
-  if (typeof value === 'bigint') {
-    return value.toString();
-  }
-  return value;
-}
-
-// Tüm istemcilere mesaj gönder
-const broadcast = (data) => {
-  wss.clients.forEach(client => {
-    if (client.readyState === 1) {
-      client.send(JSON.stringify(data, replacer));
-    }
-  });
-};
-
-// Performans ayarları
-const BLOCK_POLL_INTERVAL = Number(process.env.BLOCK_POLL_INTERVAL) || 500;
-const MAX_TRANSACTIONS_PER_BLOCK = Number(process.env.MAX_TRANSACTIONS_PER_BLOCK) || 100;
-const WEBSOCKET_RECONNECT_DELAY = Number(process.env.WEBSOCKET_RECONNECT_DELAY) || 1000;
-const MAX_RETRIES = Number(process.env.MAX_RETRIES) || 3;
-const RATE_LIMIT_WINDOW = Number(process.env.RATE_LIMIT_WINDOW) || 60000;
-const RATE_LIMIT_MAX_REQUESTS = Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100;
-
-// Son işlenen blok numarasını takip et
-let lastProcessedBlockNumber = 0;
-
-// Blok polling
-const pollBlocks = async () => {
-  const provider = createProvider();
-  let retryCount = 0;
-  
-  while (retryCount < MAX_RETRIES) {
-    try {
-      const blockNumber = await provider.getBlockNumber();
-      
-      // Eğer yeni blok numarası son işlenenden küçük veya eşitse, işleme
-      if (blockNumber <= lastProcessedBlockNumber) {
-        console.log(`Blok ${blockNumber} zaten işlendi, atlanıyor...`);
-        break;
-      }
-
-      const block = await provider.getBlock(blockNumber, false);
-      
-      if (block) {
-        // Transaction analizi
-        const stats = {
-          'Transfer': 0,
-          'NFT Mint': 0,
-          'DEX Swap': 0,
-          'Contract Creation': 0,
-          'Other': 0
-        };
-
-        // Transaction'ları sınırla
-        const limitedTransactions = block.transactions.slice(0, MAX_TRANSACTIONS_PER_BLOCK);
-
-        // Transaction'ları paralel olarak işle
-        const txPromises = limitedTransactions.map(async (txHash) => {
-          try {
-            const tx = await provider.getTransaction(txHash);
-            if (tx) {
-              const type = await analyzeTransactionType(tx, provider);
-              stats[type]++;
-              return { hash: tx.hash, type, from: tx.from, to: tx.to, value: tx.value.toString() };
-            }
-            return null;
-          } catch (e) {
-            return null;
-          }
-        });
-
-        // Tüm transaction'ları paralel olarak çek
-        const transactions = (await Promise.all(txPromises)).filter(Boolean);
-
-        // WebSocket üzerinden veriyi gönder
-        broadcast({
-          type: 'block',
-          data: {
-            block: {
-              number: block.number,
-              hash: block.hash,
-              parentHash: block.parentHash,
-              timestamp: block.timestamp,
-              gasUsed: block.gasUsed.toString(),
-              gasLimit: block.gasLimit.toString(),
-              baseFeePerGas: block.baseFeePerGas?.toString(),
-              miner: block.miner,
-              transactions: transactions
-            },
-            stats
-          }
-        });
-
-        // Son işlenen blok numarasını güncelle
-        lastProcessedBlockNumber = blockNumber;
-        console.log(`Blok ${blockNumber} işlendi`);
-        break;
-      }
-    } catch (error) {
-      console.error(`Blok polling hatası (deneme ${retryCount + 1}/${MAX_RETRIES}):`, error);
-      retryCount++;
-      if (retryCount === MAX_RETRIES) {
-        console.error('Maksimum deneme sayısına ulaşıldı');
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-  }
-};
-
-// Pending transaction polling
-/*
-const pollPendingTxs = async () => {
-  const provider = createProvider();
-  
-  try {
-    const pendingTxs = await provider.send('eth_pendingTransactions', []);
-    
-    if (pendingTxs.length > 0) {
-      broadcast({
-        type: 'pendingTxs',
-        data: pendingTxs
-      });
-    }
-  } catch (error) {
-    console.error('Pending tx polling hatası:', error);
-  }
-};
-*/
 
 // Transaction tipini analiz et
-const analyzeTransactionType = async (tx, provider) => {
+const analyzeTransactionType = (tx) => {
   try {
-    // 1. Sadece değer transferi (ETH transferi)
-    if ((!tx.data || tx.data === '0x') && tx.to) {
-      return 'Transfer';
-    }
-
-    // 2. DEX Swap (yaygın router signature'ları)
-    if (tx.data && (
-      tx.data.startsWith('0x38ed1739') ||
-      tx.data.startsWith('0x18cbafe5') ||
-      tx.data.startsWith('0x8803dbee') ||
-      tx.data.startsWith('0x5c11d795') ||
-      tx.data.startsWith('0x7ff36ab5') ||
-      tx.data.startsWith('0x414bf389')
-    )) {
-      return 'DEX Swap';
-    }
-
-    // 3. NFT Mint (yaygın mint fonksiyonları)
-    if (tx.data && (
-      tx.data.startsWith('0x1249c58b') ||
-      tx.data.startsWith('0x40c10f19') ||
-      tx.data.startsWith('0xa0712d68') ||
-      tx.data.startsWith('0x6a627842')
-    )) {
-      return 'NFT Mint';
-    }
-
-    // 4. Contract Creation (to alanı yok)
-    if (!tx.to) {
-      return 'Contract Creation';
-    }
-
-    // 5. Diğer contract interaction'lar
-    if (tx.data && tx.data !== '0x') {
-      return 'Other';
-    }
-
-    // 6. Fallback
-    return 'Other';
+    if (!tx || !tx.input) return 'unknown';
+    
+    const input = tx.input.toLowerCase();
+    
+    if (input.startsWith('0x095ea7b3')) return 'approve';
+    if (input.startsWith('0x23b872dd')) return 'transferFrom';
+    if (input.startsWith('0x38ed1739')) return 'swap';
+    if (input.startsWith('0x7ff36ab5')) return 'swapExactETHForTokens';
+    if (input.startsWith('0xfb3bdb41')) return 'swapETHForExactTokens';
+    if (input.startsWith('0x4a25d94a')) return 'swapTokensForExactTokens';
+    if (input.startsWith('0x8803dbee')) return 'swapExactTokensForTokens';
+    if (input.startsWith('0x5c11d795')) return 'swapExactTokensForETH';
+    if (input.startsWith('0x18cbafe5')) return 'swapExactTokensForETH';
+    
+    return 'other';
   } catch (error) {
-    console.error('Transaction analiz hatası:', error);
-    return 'Other';
+    console.error('Transaction tipi analiz hatası:', error);
+    return 'unknown';
   }
 };
 
-// Express sunucusu
-app.use(cors());
-app.use(express.json());
+// BigInt'leri string'e çeviren yardımcı fonksiyon
+const serializeBigInt = (obj) => {
+  if (typeof obj === 'bigint') {
+    return obj.toString();
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(serializeBigInt);
+  }
+  if (obj && typeof obj === 'object') {
+    const result = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = serializeBigInt(value);
+    }
+    return result;
+  }
+  return obj;
+};
 
-// WebSocket sunucusunu başlat
-wss.on('listening', () => {
-  console.log(`WebSocket sunucusu ${PORT} portunda başlatıldı`);
+// Blokları poll et (sadeleştirilmiş)
+const pollBlocks = async () => {
+  if (isPolling) {
+    console.log('Polling zaten devam ediyor, yeni polling başlatılmıyor');
+    return;
+  }
+  isPolling = true;
+  const provider = createProvider();
+  let retryCount = 0;
+  try {
+    const latestBlockNumber = await provider.getBlockNumber();
+    console.log('Mevcut blok numarası:', latestBlockNumber);
+    let fromBlock = Number(lastProcessedBlock.number) + 1;
+    let toBlock = Number(latestBlockNumber);
+    if (fromBlock > toBlock) {
+      console.log('Yeni blok yok, beklemede...');
+      isPolling = false;
+      return;
+    }
+    for (let blockNumber = fromBlock; blockNumber <= toBlock; blockNumber++) {
+      let block;
+      try {
+        block = await provider.getBlock({ blockNumber: toBigInt(blockNumber), includeTransactions: true });
+      } catch (err) {
+        console.error('Blok alınırken hata:', err);
+        continue;
+      }
+      if (!block) {
+        console.log('Blok bulunamadı:', blockNumber);
+        continue;
+      }
+      if (block.hash === lastProcessedBlock.hash) {
+        console.log('Blok zaten işlendi:', blockNumber);
+        continue;
+      }
+      let transactions = [];
+      if (block.transactions && typeof block.transactions[0] === 'object') {
+        // Transaction detayları zaten var
+        transactions = block.transactions.map(tx => ({
+          hash: tx.hash,
+          from: tx.from,
+          to: tx.to,
+          value: tx.value?.toString() || '0',
+          input: tx.input,
+          type: analyzeTransactionType(tx)
+        }));
+      } else {
+        // Sadece hash varsa, eski yöntemi kullan
+        const txHashes = block.transactions || [];
+        for (const txHash of txHashes) {
+          try {
+            const tx = await provider.getTransaction({ hash: txHash });
+            if (tx) {
+              const txType = analyzeTransactionType(tx);
+              transactions.push({
+                hash: tx.hash,
+                from: tx.from,
+                to: tx.to,
+                value: tx.value.toString(),
+                input: tx.input,
+                type: txType
+              });
+            }
+          } catch (txError) {
+            console.error('Transaction çekme hatası:', txError);
+          }
+        }
+      }
+      const blockData = {
+        number: block.number.toString(),
+        hash: block.hash,
+        timestamp: block.timestamp.toString(),
+        transactions: transactions,
+        gasUsed: block.gasUsed?.toString() || null,
+        gasLimit: block.gasLimit?.toString() || null,
+        baseFeePerGas: block.baseFeePerGas?.toString() || null
+      };
+      let sentCount = 0;
+      wsClients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          try {
+            const serializedData = serializeBigInt(blockData);
+            client.send(JSON.stringify(serializedData));
+            sentCount++;
+          } catch (sendError) {
+            console.error('Veri gönderme hatası:', sendError);
+            wsClients.delete(client);
+          }
+        }
+      });
+      console.log(`Blok #${blockNumber} verisi ${sentCount} client'a gönderildi.`);
+      lastProcessedBlock = {
+        number: block.number,
+        hash: block.hash
+      };
+    }
+  } catch (error) {
+    console.error('Blok polling hatası:', error);
+  }
+  isPolling = false;
+};
+
+// Uygulama başlatılırken en güncel blok numarasını al
+const initializeLastProcessedBlock = async () => {
+  try {
+    const provider = createProvider();
+    const latestBlockNumber = await provider.getBlockNumber();
+    const latestBlock = await provider.getBlock({ blockNumber: latestBlockNumber });
+    lastProcessedBlock = {
+      number: Number(latestBlockNumber),
+      hash: latestBlock?.hash || ''
+    };
+    console.log('Başlangıçta son blok:', lastProcessedBlock);
+  } catch (err) {
+    console.error('Başlangıç bloğu alınamadı:', err);
+  }
+};
+
+// Polling'i başlat
+initializeLastProcessedBlock().then(() => {
+  setInterval(pollBlocks, POLL_INTERVAL);
 });
 
-// Blok polling'i başlat
-setInterval(pollBlocks, BLOCK_POLL_INTERVAL);
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    connectedClients: wsClients.size,
+    lastProcessedBlock: serializeBigInt(lastProcessedBlock)
+  });
+});
 
 server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`Server ${PORT} portunda çalışıyor`);
 }); 
