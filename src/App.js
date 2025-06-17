@@ -363,6 +363,7 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [logBlocks, setLogBlocks] = useState([]);
   const [selectedPlane, setSelectedPlane] = useState(null);
+  const [showPanels, setShowPanels] = useState(true);
 
   // Transaction tipini analiz et (viem ile)
   const analyzeTransactionType = (tx) => {
@@ -545,38 +546,97 @@ function App() {
     console.log('App.js blocks.length:', blocks.length);
   }, [blocks]);
 
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 700) {
+        setShowPanels(false);
+      } else {
+        setShowPanels(true);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
     <>
       <GlobalStyle />
       <Layout>
-        <SidePanel>
-          <Title>MONAD RETRO BLOCK EXPLORER</Title>
-          <Table style={{marginBottom: '8px', marginTop: '0', padding: '10px 8px', height: 'auto'}}>
-            <TableRow><TableLabel>Block Number:</TableLabel><TableValue>{safeBlockData.number}</TableValue></TableRow>
-            <TableRow><TableLabel>Timestamp:</TableLabel><TableValue>{safeBlockData.timestamp}</TableValue></TableRow>
-            <TableRow><TableLabel>Transaction Count:</TableLabel><TableValue>{safeBlockData.transactionCount}</TableValue></TableRow>
-            <TableRow><TableLabel>Gas Used:</TableLabel><TableValue>{safeBlockData.gasUsed}</TableValue></TableRow>
-            <TableRow><TableLabel>Gas Limit:</TableLabel><TableValue>{safeBlockData.gasLimit}</TableValue></TableRow>
-            <TableRow><TableLabel>Base Fee:</TableLabel><TableValue>{safeBlockData.baseFeePerGas}</TableValue></TableRow>
-            <TableRow><TableLabel>Transfer:</TableLabel><TableValue>{txStats['Transfer']}</TableValue></TableRow>
-            <TableRow><TableLabel>NFT Mint:</TableLabel><TableValue>{txStats['NFT Mint']}</TableValue></TableRow>
-            <TableRow><TableLabel>DEX Swap:</TableLabel><TableValue>{txStats['DEX Swap']}</TableValue></TableRow>
-            <TableRow><TableLabel>Contract Creation:</TableLabel><TableValue>{txStats['Contract Creation']}</TableValue></TableRow>
-            <TableRow><TableLabel>Other:</TableLabel><TableValue>{txStats['Other']}</TableValue></TableRow>
-          </Table>
-          <div style={{flex:1}} />
-          <SelectedPlanePanel selectedPlane={selectedPlane} style={{marginTop: -35, alignSelf: 'center'}} />
-        </SidePanel>
+        {!showPanels && (
+          <button
+            style={{
+              position: 'fixed',
+              top: 16,
+              left: 16,
+              zIndex: 9999,
+              background: '#111',
+              color: '#00ff00',
+              border: '2px solid #00ff00',
+              borderRadius: 8,
+              padding: '8px 16px',
+              fontFamily: 'VT323, monospace',
+              fontSize: 18,
+              boxShadow: '0 0 8px #00ff00',
+              cursor: 'pointer',
+            }}
+            onClick={() => setShowPanels(true)}
+          >
+            Show Panels
+          </button>
+        )}
         <MainArea>
-        <RetroPlane 
-          blocks={blocks} 
-          onReturn={() => setShowRetro(false)} 
-          txStats={txStats} 
-          events={events} 
-          onPlaneExit={handlePlaneExit}
-          onPlaneSelect={setSelectedPlane}
-        />
-        <BlockRadarLog rescuedBlocks={logBlocks} />
+          <RetroPlane 
+            blocks={blocks} 
+            onReturn={() => setShowRetro(false)} 
+            txStats={txStats} 
+            events={events} 
+            onPlaneExit={handlePlaneExit}
+            onPlaneSelect={setSelectedPlane}
+          />
+          {showPanels && (
+            <>
+              <SidePanel>
+                <Title>MONAD RETRO BLOCK EXPLORER</Title>
+                <Table style={{marginBottom: '8px', marginTop: '0', padding: '10px 8px', height: 'auto'}}>
+                  <TableRow><TableLabel>Block Number:</TableLabel><TableValue>{safeBlockData.number}</TableValue></TableRow>
+                  <TableRow><TableLabel>Timestamp:</TableLabel><TableValue>{safeBlockData.timestamp}</TableValue></TableRow>
+                  <TableRow><TableLabel>Transaction Count:</TableLabel><TableValue>{safeBlockData.transactionCount}</TableValue></TableRow>
+                  <TableRow><TableLabel>Gas Used:</TableLabel><TableValue>{safeBlockData.gasUsed}</TableValue></TableRow>
+                  <TableRow><TableLabel>Gas Limit:</TableLabel><TableValue>{safeBlockData.gasLimit}</TableValue></TableRow>
+                  <TableRow><TableLabel>Base Fee:</TableLabel><TableValue>{safeBlockData.baseFeePerGas}</TableValue></TableRow>
+                  <TableRow><TableLabel>Transfer:</TableLabel><TableValue>{txStats['Transfer']}</TableValue></TableRow>
+                  <TableRow><TableLabel>NFT Mint:</TableLabel><TableValue>{txStats['NFT Mint']}</TableValue></TableRow>
+                  <TableRow><TableLabel>DEX Swap:</TableLabel><TableValue>{txStats['DEX Swap']}</TableValue></TableRow>
+                  <TableRow><TableLabel>Contract Creation:</TableLabel><TableValue>{txStats['Contract Creation']}</TableValue></TableRow>
+                  <TableRow><TableLabel>Other:</TableLabel><TableValue>{txStats['Other']}</TableValue></TableRow>
+                </Table>
+                <div style={{flex:1}} />
+                <SelectedPlanePanel selectedPlane={selectedPlane} style={{marginTop: -35, alignSelf: 'center'}} />
+              </SidePanel>
+              <BlockRadarLog rescuedBlocks={logBlocks} />
+              <button
+                style={{
+                  position: 'fixed',
+                  top: 16,
+                  right: 16,
+                  zIndex: 9999,
+                  background: '#111',
+                  color: '#00ff00',
+                  border: '2px solid #00ff00',
+                  borderRadius: 8,
+                  padding: '8px 16px',
+                  fontFamily: 'VT323, monospace',
+                  fontSize: 18,
+                  boxShadow: '0 0 8px #00ff00',
+                  cursor: 'pointer',
+                }}
+                onClick={() => setShowPanels(false)}
+              >
+                Hide Panels
+              </button>
+            </>
+          )}
         </MainArea>
       </Layout>
     </>

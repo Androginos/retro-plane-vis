@@ -240,25 +240,25 @@ const TURRETS = [
   {
     name: 'NFT Mint',
     img: process.env.PUBLIC_URL + '/assets/tx_types/nft_mint_icon.png',
-    x: 210,
+    x: 250,
     y: CANVAS_HEIGHT - 135,
   },
   {
     name: 'DEX Swap',
     img: process.env.PUBLIC_URL + '/assets/tx_types/dex_swap_icon.png',
-    x: 400,
+    x: 490,
     y: CANVAS_HEIGHT - 135,
   },
   {
     name: 'Contract',
     img: process.env.PUBLIC_URL + '/assets/tx_types/contract_creation_icon.png',
-    x: 600,
+    x: 730,
     y: CANVAS_HEIGHT - 135,
   },
   {
     name: 'Other',
     img: process.env.PUBLIC_URL + '/assets/tx_types/other_icon.png',
-    x: 780,
+    x: 950,
     y: CANVAS_HEIGHT - 135,
   }
 ];
@@ -352,6 +352,13 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect }) => {
   const [speed, setSpeed] = useState(0.8);
   const speedRef = useRef(0.8);
   const bulletsRef = useRef([]);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 700);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 700);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => { speedRef.current = speed; }, [speed]);
 
@@ -714,26 +721,27 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect }) => {
       <canvas
         ref={canvasRef}
         style={{
-          width: `${CANVAS_WIDTH}px`,
-          height: `${CANVAS_HEIGHT}px`,
+          width: isMobile ? '96vw' : `${CANVAS_WIDTH}px`,
+          height: isMobile ? '60vw' : `${CANVAS_HEIGHT}px`,
           maxWidth: '98vw',
           maxHeight: '98vh',
-          minWidth: '320px',
-          minHeight: '240px',
+          minWidth: '220px',
+          minHeight: '120px',
           display: 'block',
           border: '3px solid #00ff00',
           borderRadius: '16px',
           boxShadow: '0 0 24px #00ff00',
           background: '#000',
           marginTop: '20px',
-          marginLeft: '40px',
+          marginLeft: isMobile ? 'auto' : '40px',
+          marginRight: isMobile ? 'auto' : undefined,
         }}
       />
       <div
         style={{
           position: 'fixed',
           top: 540,
-          left: 70,
+          left: 1190,
           background: 'rgba(0, 0, 0, 0.6)',
           padding: '8px 12px',
           borderRadius: '8px',
