@@ -1,7 +1,99 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import styled from 'styled-components';
+import styled, { createGlobalStyle } from 'styled-components';
 import { createPublicClient, http, defineChain } from 'viem';
 import RetroPlane from "./RetroPlane";
+
+const GlobalStyle = createGlobalStyle`
+  @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+  body {
+    font-family: 'VT323', monospace;
+    background: #000;
+    color: #00ff00;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    width: 100vw;
+    overflow-x: hidden;
+  }
+`;
+
+const Layout = styled.div`
+  display: flex;
+  flex-direction: row;
+  width: 100vw;
+  height: 100vh;
+`;
+
+// Panel boyut ve konum ayarları
+const PANEL_WIDTH = '400px';
+const PANEL_MIN_WIDTH = '320px';
+const PANEL_MAX_WIDTH = '320px';
+const PANEL_HEIGHT = 'auto'; // İsterseniz örn. '700px' yapabilirsiniz
+const PANEL_MARGIN = '20px 0 20px 20px';
+const PANEL_PADDING = '20px 5px';
+
+const SidePanel = styled.div`
+  width: ${PANEL_WIDTH};
+  min-width: ${PANEL_MIN_WIDTH};
+  max-width: ${PANEL_MAX_WIDTH};
+  height: ${PANEL_HEIGHT};
+  background: rgba(0,0,0,0.95);
+  border: 3px solid #00ff00;
+  border-radius: 16px;
+  margin: ${PANEL_MARGIN};
+  padding: ${PANEL_PADDING};
+  box-shadow: 0 0 24px #00ff00;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  align-items: center;
+  justify-content: flex-start;
+`;
+
+const Title = styled.h1`
+  color: #00ff00;
+  text-align: center;
+  font-size: 2.2rem;
+  margin: 0 0 24px 0;
+  text-shadow: 0 0 8px #00ff00;
+  width: 100%;
+`;
+
+const Table = styled.div`
+  width: 95%;
+  min-width: 200px;
+  max-width: 260px;
+  height: 200px;
+  padding: 20px 16px;
+  margin-bottom: 0px;
+  background: rgba(0,0,0,0.7);
+  border: 2px solid #00ff00;
+  border-radius: 10px;
+  font-size: 1.2rem;
+`;
+const TableRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px dotted #00ff00;
+  padding: 6px 0;
+  &:last-child { border-bottom: none; }
+`;
+const TableLabel = styled.span`
+  color: #00ff00;
+`;
+const TableValue = styled.span`
+  color: #fff;
+`;
+
+const MainArea = styled.div`
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  position: relative;
+  overflow: hidden;
+`;
 
 const rpcUrls = [
   process.env.REACT_APP_ALCHEMY_RPC_URL_1,
@@ -42,11 +134,13 @@ const client = createPublicClient({
 });
 
 const AppContainer = styled.div`
-  background-color: #000;
-  color: #00ff00;
-  font-family: 'VT323', monospace;
-  min-height: 100vh;
-  padding: 20px;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: #000;
 `;
 
 const Terminal = styled.div`
@@ -56,12 +150,6 @@ const Terminal = styled.div`
   padding: 20px;
   margin: 20px;
   box-shadow: 0 0 10px #00ff00;
-`;
-
-const Title = styled.h1`
-  color: #00ff00;
-  text-align: center;
-  text-shadow: 0 0 5px #00ff00;
 `;
 
 const DataDisplay = styled.div`
@@ -162,12 +250,63 @@ const RetroButton = styled.button`
   }
 `;
 
+const BlockRadarLog = ({ rescuedBlocks }) => {
+  return (
+    <div style={{
+      position: 'fixed',
+      right: 20,
+      top: 18,
+      width: 340,
+      height: 770,
+      background: 'rgba(0,0,0,0.95)',
+      border: '3px solid #00ff00',
+      borderRadius: 16,
+      color: '#00ff00',
+      fontFamily: 'VT323, monospace',
+      fontSize: 18,
+      boxShadow: '0 0 24px #00ff00',
+      zIndex: 20000,
+      overflowY: 'auto',
+      padding: 18
+    }}>
+      <div style={{fontSize: 26, fontWeight: 'bold', textAlign: 'center', marginBottom: 12, textShadow: '0 0 8px #00ff00'}}>BLOCK RADAR LOG</div>
+      <div style={{fontSize: 18, fontWeight: 'bold', marginBottom: 10}}>RESCUED BLOCKS LOG</div>
+      {rescuedBlocks.length === 0 && <div style={{color:'#888'}}>Henüz blok yok.</div>}
+      {rescuedBlocks.slice(-30).reverse().map((block, i) => (
+        <div key={block.number} style={{marginBottom: 16, borderBottom: '1px solid #00ff00', paddingBottom: 8}}>
+          <div style={{fontWeight:'bold', color:'#00ff00', fontSize:20}}>
+            Block #{block.number} <span style={{color:'#0f0', fontWeight:'normal', fontSize:16}}>RESCUED</span>
+          </div>
+          <div>Tx: <b>{block.transactions?.length ?? 0}</b></div>
+          <div>Time: {block.timestamp ? new Date(Number(block.timestamp)*1000).toLocaleTimeString() : '-'}</div>
+          <div>Type: <b>{block.transactions && block.transactions[0]?.type ? block.transactions[0].type : 'Other'}</b></div>
+          <div>
+            <a href={`https://testnet.monadexplorer.com/block/${block.number}`} target="_blank" rel="noopener noreferrer" style={{color:'#00ff00', textDecoration:'underline'}}>Explorer</a>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const getRandomPlaneType = () => {
   const types = ['fighter', 'bomber', 'cargo'];
   return types[Math.floor(Math.random() * types.length)];
 };
 
 const DEBUG = process.env.NODE_ENV !== 'production';
+
+// Blok tipini belirleyen fonksiyon
+const getBlockType = (block) => {
+  if (!block) return 'VALIDATED';
+  if (Array.isArray(block.transactions) && block.transactions.length === 0 && (block.gasUsed === '0' || block.gasUsed === 0)) {
+    return 'GHOST';
+  }
+  if (Array.isArray(block.transactions) && block.transactions.some(tx => tx.status === 'reverted' || tx.reverted === true)) {
+    return 'OVERLOADED';
+  }
+  return 'VALIDATED';
+};
 
 function App() {
   const [blockData, setBlockData] = useState(null);
@@ -187,21 +326,34 @@ function App() {
   const [events, setEvents] = useState([]);
   const [ws, setWs] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [logBlocks, setLogBlocks] = useState([]);
 
   // Transaction tipini analiz et (viem ile)
   const analyzeTransactionType = (tx) => {
     if (!tx) return 'Other';
+    
+    console.log('Analyzing transaction:', tx);
+    
+    // Contract creation kontrolü
     if (!tx.to) {
       if (tx.input && tx.input.startsWith('0x60806040')) return 'NFT Mint';
       return 'Contract Creation';
     }
+    
+    // Transfer kontrolü
     if (tx.value > 0n && tx.input === '0x') return 'Transfer';
+    
+    // DEX Swap kontrolü
     if (tx.input && (
-      tx.input.startsWith('0x38ed1739') ||
-      tx.input.startsWith('0x18cbafe5') ||
-      tx.input.startsWith('0x8803dbee') ||
-      tx.input.startsWith('0x5c11d795')
+      tx.input.startsWith('0x38ed1739') || // Uniswap V2
+      tx.input.startsWith('0x18cbafe5') || // PancakeSwap
+      tx.input.startsWith('0x8803dbee') || // SushiSwap
+      tx.input.startsWith('0x5c11d795')    // 1inch
     )) return 'DEX Swap';
+    
+    // Revert kontrolü
+    if (tx.status === 'reverted' || tx.type === 'Other') return 'Other';
+    
     return 'Other';
   };
 
@@ -210,15 +362,18 @@ function App() {
     try {
       const parsed = JSON.parse(data);
       // Her zaman gerçek blok objesini kullan
-      const blockObj = parsed.data?.block || parsed.block || parsed.data || parsed;
+      const blockObjRaw = parsed.data?.block || parsed.block || parsed.data || parsed;
       const statsData = parsed.data?.stats || parsed.stats || null;
+      // Block tipini belirle
+      const blockType = getBlockType(blockObjRaw);
+      const blockObj = { ...blockObjRaw, type: blockType };
 
       setBlockData(blockObj);
 
       setBlocks(prevBlocks => {
         if (prevBlocks.some(b => b.number === blockObj.number)) return prevBlocks;
         const newBlocks = [...prevBlocks, blockObj];
-        return newBlocks.length > 100 ? newBlocks.slice(-100) : newBlocks;
+        return newBlocks.slice(-100); // Son 100 blokla sınırla
       });
 
       setLastBlockNumber(blockObj.number);
@@ -272,7 +427,25 @@ function App() {
       };
 
       ws.onmessage = (event) => {
-        handleNewBlock(event.data);
+        console.log('=== WebSocket Raw Data ===');
+        console.log('Raw data:', event.data);
+        try {
+          const parsed = JSON.parse(event.data);
+          const blockData = parsed.data?.block || parsed.block || parsed.data || parsed;
+          
+          console.log('=== Parsed Block Data ===');
+          console.log('Block number:', blockData.number);
+          console.log('Block timestamp:', blockData.timestamp);
+          console.log('Gas used:', blockData.gasUsed);
+          console.log('Gas limit:', blockData.gasLimit);
+          console.log('Transactions:', blockData.transactions);
+          console.log('Transaction count:', blockData.transactions?.length);
+          console.log('Transaction types:', blockData.transactions?.map(tx => analyzeTransactionType(tx)));
+          
+          handleNewBlock(event.data);
+        } catch (error) {
+          console.error('Error parsing WebSocket data:', error);
+        }
       };
 
       ws.onerror = (error) => {
@@ -322,75 +495,54 @@ function App() {
     baseFeePerGas: blockData.baseFeePerGas ? blockData.baseFeePerGas.toString() : '-'
   } : {};
 
-  return (
-    <AppContainer>
-      <RetroButton onClick={() => setShowRetro(!showRetro)}>
-        {showRetro ? 'SHOW TERMINAL' : 'LAUNCH RETRO MODE'}
-      </RetroButton>
+  // Uçak ekrandan çıkınca sadece blocks dizisinden çıkar
+  const handlePlaneExit = (block) => {
+    setBlocks(prevBlocks => prevBlocks.filter(b => b.number !== block.number));
+    setLogBlocks(prev => {
+      if (prev.some(b => b.number === block.number)) return prev;
+      return [...prev, block];
+    });
+  };
 
-      {showRetro ? (
+  // blocks dizisinin güncellenmesini ve sıfırlanmadığını kontrol et
+  useEffect(() => {
+    console.log('App.js blocks.length:', blocks.length);
+  }, [blocks]);
+
+  return (
+    <>
+      <GlobalStyle />
+      <Layout>
+        <SidePanel>
+          <Title>MONAD RETRO BLOCK EXPLORER</Title>
+          <Table>
+            <TableRow><TableLabel>Block Number:</TableLabel><TableValue>{safeBlockData.number}</TableValue></TableRow>
+            <TableRow><TableLabel>Timestamp:</TableLabel><TableValue>{safeBlockData.timestamp}</TableValue></TableRow>
+            <TableRow><TableLabel>Transaction Count:</TableLabel><TableValue>{safeBlockData.transactionCount}</TableValue></TableRow>
+            <TableRow><TableLabel>Gas Used:</TableLabel><TableValue>{safeBlockData.gasUsed}</TableValue></TableRow>
+            <TableRow><TableLabel>Gas Limit:</TableLabel><TableValue>{safeBlockData.gasLimit}</TableValue></TableRow>
+            <TableRow><TableLabel>Base Fee:</TableLabel><TableValue>{safeBlockData.baseFeePerGas}</TableValue></TableRow>
+          </Table>
+          <Table>
+            <TableRow><TableLabel>Transfer:</TableLabel><TableValue>{txStats['Transfer']}</TableValue></TableRow>
+            <TableRow><TableLabel>NFT Mint:</TableLabel><TableValue>{txStats['NFT Mint']}</TableValue></TableRow>
+            <TableRow><TableLabel>DEX Swap:</TableLabel><TableValue>{txStats['DEX Swap']}</TableValue></TableRow>
+            <TableRow><TableLabel>Contract Creation:</TableLabel><TableValue>{txStats['Contract Creation']}</TableValue></TableRow>
+            <TableRow><TableLabel>Other:</TableLabel><TableValue>{txStats['Other']}</TableValue></TableRow>
+          </Table>
+        </SidePanel>
+        <MainArea>
         <RetroPlane 
           blocks={blocks} 
           onReturn={() => setShowRetro(false)} 
           txStats={txStats} 
           events={events} 
+          onPlaneExit={handlePlaneExit}
         />
-      ) : (
-        <>
-          <Title>MONAD BLOCK EXPLORER</Title>
-          
-          {error && <ErrorBox>{error}</ErrorBox>}
-          
-          {isLoading || !blockData ? (
-            <LoadingBox>INITIALIZING BLOCK DATA...</LoadingBox>
-          ) : (
-            <>
-              <Terminal>
-                <DataDisplay>
-                  <UpdateIndicator $isLoading={isLoading}>
-                    Last Update: {lastUpdate.toLocaleTimeString()}
-                  </UpdateIndicator>
-                  <StatItem>
-                    <StatLabel>Block Number:</StatLabel>
-                    <StatValue>{safeBlockData.number}</StatValue>
-                  </StatItem>
-                  <StatItem>
-                    <StatLabel>Timestamp:</StatLabel>
-                    <StatValue>{safeBlockData.timestamp}</StatValue>
-                  </StatItem>
-                  <StatItem>
-                    <StatLabel>Transaction Count:</StatLabel>
-                    <StatValue>{safeBlockData.transactionCount}</StatValue>
-                  </StatItem>
-                  <StatItem>
-                    <StatLabel>Gas Used:</StatLabel>
-                    <StatValue>{safeBlockData.gasUsed}</StatValue>
-                  </StatItem>
-                  <StatItem>
-                    <StatLabel>Gas Limit:</StatLabel>
-                    <StatValue>{safeBlockData.gasLimit}</StatValue>
-                  </StatItem>
-                  <StatItem>
-                    <StatLabel>Base Fee:</StatLabel>
-                    <StatValue>{safeBlockData.baseFeePerGas}</StatValue>
-                  </StatItem>
-                </DataDisplay>
-
-                <TransactionStats>
-                  <StatTitle>TRANSACTION ANALYSIS</StatTitle>
-                  {Object.entries(txStats || {}).map(([type, count]) => (
-                    <StatItem key={type}>
-                      <StatLabel>{type}:</StatLabel>
-                      <StatValue>{typeof count === 'number' ? count : 0}</StatValue>
-                    </StatItem>
-                  ))}
-                </TransactionStats>
-              </Terminal>
-            </>
-          )}
-        </>
-      )}
-    </AppContainer>
+        <BlockRadarLog rescuedBlocks={logBlocks} />
+        </MainArea>
+      </Layout>
+    </>
   );
 }
 

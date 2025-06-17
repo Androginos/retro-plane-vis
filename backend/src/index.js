@@ -35,7 +35,9 @@ const RPC_URLS = [
   process.env.REACT_APP_ALCHEMY_RPC_URL_5,
   process.env.REACT_APP_ALCHEMY_RPC_URL_6,
   process.env.REACT_APP_ALCHEMY_RPC_URL_7,
-  process.env.REACT_APP_ALCHEMY_RPC_URL_8
+  process.env.REACT_APP_ALCHEMY_RPC_URL_8,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_9,
+  process.env.REACT_APP_ALCHEMY_RPC_URL_10
 ].filter(Boolean); // undefined olanları filtrele
 
 if (RPC_URLS.length === 0) {
