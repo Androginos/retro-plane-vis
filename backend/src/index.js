@@ -144,24 +144,26 @@ wss.on('connection', (ws) => {
 // Transaction tipini analiz et
 const analyzeTransactionType = (tx) => {
   try {
-    if (!tx || !tx.input) return 'unknown';
-    
-    const input = tx.input.toLowerCase();
-    
-    if (input.startsWith('0x095ea7b3')) return 'approve';
-    if (input.startsWith('0x23b872dd')) return 'transferFrom';
-    if (input.startsWith('0x38ed1739')) return 'swap';
-    if (input.startsWith('0x7ff36ab5')) return 'swapExactETHForTokens';
-    if (input.startsWith('0xfb3bdb41')) return 'swapETHForExactTokens';
-    if (input.startsWith('0x4a25d94a')) return 'swapTokensForExactTokens';
-    if (input.startsWith('0x8803dbee')) return 'swapExactTokensForTokens';
-    if (input.startsWith('0x5c11d795')) return 'swapExactTokensForETH';
-    if (input.startsWith('0x18cbafe5')) return 'swapExactTokensForETH';
-    
-    return 'other';
+    if (!tx) return 'Other';
+    // Contract creation
+    if (!tx.to) {
+      if (tx.input && tx.input.startsWith('0x60806040')) return 'NFT Mint';
+      return 'Contract';
+    }
+    // Transfer
+    if (tx.value > 0n && tx.input === '0x') return 'Transfer';
+    // DEX Swap
+    if (tx.input && (
+      tx.input.startsWith('0x38ed1739') || // Uniswap V2
+      tx.input.startsWith('0x18cbafe5') || // PancakeSwap
+      tx.input.startsWith('0x8803dbee') || // SushiSwap
+      tx.input.startsWith('0x5c11d795')    // 1inch
+    )) return 'DEX Swap';
+    // Diğer
+    return 'Other';
   } catch (error) {
     console.error('Transaction tipi analiz hatası:', error);
-    return 'unknown';
+    return 'Other';
   }
 };
 

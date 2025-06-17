@@ -282,7 +282,67 @@ function loadImage(src) {
   });
 }
 
-const RetroPlane = ({ blocks = [], onPlaneExit }) => {
+const BULLET_SIZE_BASE = 16;
+const BULLET_SIZE_MAX = 44;
+const BULLET_TYPE_MAP = {
+  'Transfer': 'Transfer',
+  'NFT Mint': 'NFT Mint',
+  'DEX Swap': 'DEX Swap',
+  'Contract Creation': 'Contract',
+  'Contract': 'Contract',
+};
+
+const getBulletType = (type) => BULLET_TYPE_MAP[type] || 'Other';
+
+const getTurretByType = (type) => {
+  switch (type) {
+    case 'Transfer': return TURRETS[0];
+    case 'NFT Mint': return TURRETS[1];
+    case 'DEX Swap': return TURRETS[2];
+    case 'Contract': return TURRETS[3];
+    default: return TURRETS[4];
+  }
+};
+
+function drawBullet(ctx, bullet) {
+  const size = 30;
+  const colorMap = {
+    'Transfer': '#7fdbca',
+    'NFT Mint': '#b2f296',
+    'DEX Swap': '#f0e68c',
+    'Contract': '#d58a94',
+    'Other': '#c9b7f3'
+  };
+  const baseColor = colorMap[bullet.type] || '#888888';
+  ctx.save();
+  ctx.globalAlpha = 1.0;
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = baseColor;
+  ctx.fillRect(Math.floor(bullet.x), Math.floor(bullet.y), size, size);
+  if (bullet.failed) {
+    ctx.fillStyle = '#d13d3d';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('X', Math.floor(bullet.x) + size / 2, Math.floor(bullet.y) + size / 2 + 1);
+  }
+  ctx.restore();
+}
+
+// Yardımcı fonksiyon: hex renk kodunu rgba'ya çevir
+function hexToRgba(hex, alpha) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) {
+    hex = hex.split('').map(x => x + x).join('');
+  }
+  const num = parseInt(hex, 16);
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect }) => {
   const canvasRef = useRef(null);
   const [assetsLoaded, setAssetsLoaded] = useState(false);
   const [planeImages, setPlaneImages] = useState([]);
@@ -291,6 +351,7 @@ const RetroPlane = ({ blocks = [], onPlaneExit }) => {
   const planesRef = useRef([]);
   const [speed, setSpeed] = useState(0.8);
   const speedRef = useRef(0.8);
+  const bulletsRef = useRef([]);
 
   useEffect(() => { speedRef.current = speed; }, [speed]);
 
@@ -314,6 +375,10 @@ const RetroPlane = ({ blocks = [], onPlaneExit }) => {
     if (canvas) {
       canvas.width = CANVAS_WIDTH;
       canvas.height = CANVAS_HEIGHT;
+      // Pixel art için ek ayarlar
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      canvas.style.imageRendering = 'pixelated';
     }
   }, []);
 
@@ -336,10 +401,46 @@ const RetroPlane = ({ blocks = [], onPlaneExit }) => {
           width: PLANE_WIDTH,
           height: PLANE_HEIGHT,
           exited: false,
+          hitCount: 0,
+          succeeded: false,
+          targetY: null,
         };
       });
       planesRef.current = [...planesRef.current, ...newPlanes];
     }
+  }, [blocks, assetsLoaded]);
+
+  // Yeni bloklar için mermi oluştur
+  useEffect(() => {
+    if (!assetsLoaded) return;
+    blocks.forEach(block => {
+      if (!block.transactions) return;
+      const plane = planesRef.current.find(p => p.block.number === block.number);
+      if (!plane) return;
+      // 5 ana tipe göre grupla
+      const txTypeCounts = { 'Transfer': 0, 'NFT Mint': 0, 'DEX Swap': 0, 'Contract': 0, 'Other': 0 };
+      block.transactions.forEach(tx => {
+        const bulletType = getBulletType(tx.type);
+        txTypeCounts[bulletType] = (txTypeCounts[bulletType] || 0) + 1;
+      });
+      Object.entries(txTypeCounts).forEach(([type, count]) => {
+        if (count === 0) return;
+        const turret = getTurretByType(type);
+        // Mermi boyutu: min 16, max 44
+        const size = Math.min(BULLET_SIZE_BASE + count * 3, BULLET_SIZE_MAX);
+        bulletsRef.current.push({
+          type,
+          color: BULLET_COLORS[type.toLowerCase()] || '#fff',
+          x: turret.x + TURRET_SIZE / 2,
+          y: turret.y + TURRET_SIZE / 2,
+          targetPlaneNumber: block.number,
+          progress: 0,
+          speed: 0.012 + Math.random() * 0.008,
+          size,
+          createdAt: Date.now() + Math.random() * 200
+        });
+      });
+    });
   }, [blocks, assetsLoaded]);
 
   // Animasyon döngüsü (sadece bir kez başlatılır, assetsLoaded true ise)
@@ -355,7 +456,58 @@ const RetroPlane = ({ blocks = [], onPlaneExit }) => {
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(bgImage, BG_X, BG_Y, BG_WIDTH, BG_HEIGHT);
-      // Turretler ve isimler
+      // --- Mermileri önce çiz ---
+      let newBullets = [];
+      const blockHitTypes = {};
+      bulletsRef.current.forEach(bullet => {
+        // Hedef uçağı bul
+        const plane = planesRef.current.find(p => p.block.number === bullet.targetPlaneNumber);
+        if (!plane) return;
+        if (plane.succeeded) return;
+        // Blok başına tip bazlı grupla
+        const blockKey = plane.block.number;
+        blockHitTypes[blockKey] = blockHitTypes[blockKey] || new Set();
+        if (blockHitTypes[blockKey].has(bullet.type)) return; // Bu tip için zaten bir mermi atıldı
+        blockHitTypes[blockKey].add(bullet.type);
+        // Hedef koordinat
+        const targetX = plane.x + PLANE_WIDTH / 2;
+        const targetY = plane.y + PLANE_HEIGHT / 2;
+        // Lerp ile hareket
+        bullet.progress += bullet.speed * speedRef.current;
+        if (bullet.progress > 1) bullet.progress = 1;
+        bullet.x = bullet.x0 !== undefined ? bullet.x0 : bullet.x;
+        bullet.y = bullet.y0 !== undefined ? bullet.y0 : bullet.y;
+        if (bullet.x0 === undefined) bullet.x0 = bullet.x;
+        if (bullet.y0 === undefined) bullet.y0 = bullet.y;
+        bullet.x = bullet.x0 + (targetX - bullet.x0) * bullet.progress;
+        bullet.y = bullet.y0 + (targetY - bullet.y0) * bullet.progress;
+        // --- Mermiyi çiz ---
+        drawBullet(ctx, bullet);
+        // Çarpışma kontrolü (merkezler arası mesafe yarıçaptan küçükse)
+        const dx = bullet.x - targetX;
+        const dy = bullet.y - targetY;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (bullet.progress >= 1 || dist < (plane.width/2)) {
+          // Hit counter'ı, bu tipin tx sayısı kadar artır
+          const block = plane.block;
+          let txCount = 0;
+          if (block.transactions && Array.isArray(block.transactions)) {
+            txCount = block.transactions.filter(tx => getBulletType(tx.type) === bullet.type).length;
+          }
+          plane.hitCount = (plane.hitCount || 0) + txCount;
+          // Eğer hitCount, toplam tx sayısına ulaştıysa succeeded
+          if (plane.hitCount >= (plane.block.transactions?.length || 0)) {
+            plane.succeeded = true;
+            plane.targetY = CANVAS_HEIGHT * (0.5 + Math.random()*0.3);
+            plane.vy = 0;
+            plane.gravity = 0;
+          }
+        } else {
+          newBullets.push(bullet);
+        }
+      });
+      bulletsRef.current = newBullets;
+      // --- Sonra turretler ve yazıları çiz ---
       TURRETS.forEach((turret, i) => {
         ctx.drawImage(
           turretImages[i],
@@ -398,47 +550,75 @@ const RetroPlane = ({ blocks = [], onPlaneExit }) => {
         ctx.fillText(text, textX, textY);
         ctx.shadowBlur = 0;
       });
-      // Planes dizisindeki uçakları çiz
+      // --- En son uçakları çiz ---
       let updatedPlanes = [];
       planesRef.current.forEach((plane, idx) => {
         const { block, fromLeft } = plane;
         const img = fromLeft ? planeImages[0] : planeImages[1];
-        // Fiziksel hareket ve dalga
-        plane.x += plane.vx;
-        plane.y += plane.vy;
-        plane.vy += plane.gravity;
-        // Dalga efekti
-        plane.y += Math.sin(Date.now() / 400 + plane.x / 120) * 1.2;
+        // Succeeded ise düz ve hedefe in
+        if (plane.succeeded) {
+          // Süzülmeyi bırak, gravity yok, dalga yok
+          if (plane.targetY !== null && Math.abs(plane.y - plane.targetY) > 2) {
+            // Hedef y'ye in
+            plane.y += (plane.targetY - plane.y) * 0.08;
+          } else {
+            // Düz çıkış
+            plane.y = plane.targetY;
+            plane.vy = 0;
+            plane.gravity = 0;
+          }
+          // Düz çıkış (x yönü)
+          plane.x += plane.vx * 1.5; // daha hızlı çıkabilir
+        } else {
+          // Fiziksel hareket ve dalga
+          plane.x += plane.vx;
+          plane.y += plane.vy;
+          plane.vy += plane.gravity;
+          // Dalga efekti
+          plane.y += Math.sin(Date.now() / 400 + plane.x / 120) * 1.2;
+        }
         // Y ekseni sınırı ve sekme
         const maxY = CANVAS_HEIGHT * 0.6;
         const minY = 25; // Üst limit eklendi
-        if (plane.y > maxY) {
-          plane.y = maxY;
-          plane.vy *= -0.3;
-        }
-        if (plane.y < minY) { // Üst limit kontrolü
-          plane.y = minY;
-          plane.vy *= -0.3;
+        if (!plane.succeeded) {
+          if (plane.y > maxY) {
+            plane.y = maxY;
+            plane.vy *= -0.3;
+          }
+          if (plane.y < minY) { // Üst limit kontrolü
+            plane.y = minY;
+            plane.vy *= -0.3;
+          }
         }
         // Uçak çizimi
         ctx.save();
         if (!fromLeft) {
           ctx.translate(plane.x + PLANE_WIDTH / 2, plane.y + PLANE_HEIGHT / 2);
           ctx.scale(-1, 1);
+          // Succeeded ise glow efekti
+          if (plane.succeeded) {
+            ctx.shadowColor = '#00ff80';
+            ctx.shadowBlur = 32;
+          }
           ctx.drawImage(img, -PLANE_WIDTH / 2, -PLANE_HEIGHT / 2, PLANE_WIDTH, PLANE_HEIGHT);
         } else {
+          // Succeeded ise glow efekti
+          if (plane.succeeded) {
+            ctx.shadowColor = '#00ff80';
+            ctx.shadowBlur = 32;
+          }
           ctx.drawImage(img, plane.x, plane.y, PLANE_WIDTH, PLANE_HEIGHT);
         }
         ctx.restore();
-        // Üstte blok numarası ve tx sayısı
-        const label = `#${block.number} | tx: ${block.transactions?.length ?? 0}`;
+        // Üstte blok numarası, tx sayısı ve hit counter
+        const label = `#${block.number} | tx: ${block.transactions?.length ?? 0} | hit: ${plane.hitCount ?? 0}`;
         ctx.font = `20px VT323, monospace`;
         ctx.textAlign = 'center';
         const labelX = fromLeft ? plane.x + PLANE_WIDTH / 2 : plane.x + PLANE_WIDTH / 2;
         const labelY = plane.y - 12;
         const labelWidth = ctx.measureText(label).width;
         ctx.save();
-        ctx.globalAlpha = 0.3; // daha az siyahlık
+        ctx.globalAlpha = 0.7;
         ctx.fillStyle = '#111';
         ctx.fillRect(labelX - labelWidth / 2 - 8, labelY - 20, labelWidth + 16, 28);
         ctx.globalAlpha = 1;
@@ -451,7 +631,16 @@ const RetroPlane = ({ blocks = [], onPlaneExit }) => {
         ctx.fillStyle = '#00ff00';
         ctx.fillText(label, labelX, labelY);
         ctx.shadowBlur = 0;
-
+        // Succeeded ise blok numarasının altında SUCCEEDED yazısı
+        if (plane.succeeded) {
+          ctx.font = `bold 22px VT323, monospace`;
+          ctx.textAlign = 'center';
+          ctx.shadowColor = '#FFA500';
+          ctx.shadowBlur = 16;
+          ctx.fillStyle = '#FFA500';
+          ctx.fillText('SUCCEEDED', labelX, labelY + 32);
+          ctx.shadowBlur = 0;
+        }
         // Altta gas oranı
         const gasUsed = Number(block.gasUsed || 0);
         const gasLimit = Number(block.gasLimit || 1);
@@ -460,7 +649,7 @@ const RetroPlane = ({ blocks = [], onPlaneExit }) => {
         const gasY = plane.y + PLANE_HEIGHT + 28;
         const gasWidth = ctx.measureText(gasLabel).width;
         ctx.save();
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.7;
         ctx.fillStyle = '#111';
         ctx.fillRect(labelX - gasWidth / 2 - 8, gasY - 20, gasWidth + 16, 28);
         ctx.globalAlpha = 1;
@@ -495,6 +684,31 @@ const RetroPlane = ({ blocks = [], onPlaneExit }) => {
     return () => cancelAnimationFrame(animationFrameId);
   }, [assetsLoaded, bgImage, planeImages, turretImages]);
 
+  // Canvas'a tıklama ile uçak seçimi
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !assetsLoaded) return;
+    function handleClick(e) {
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      // Uçaklardan birine tıklandı mı kontrol et
+      for (let plane of planesRef.current) {
+        if (
+          mouseX >= plane.x && mouseX <= plane.x + plane.width &&
+          mouseY >= plane.y && mouseY <= plane.y + plane.height
+        ) {
+          if (onPlaneSelect) onPlaneSelect(plane.block);
+          return;
+        }
+      }
+      // Hiçbir uçağa tıklanmadıysa seçimi kaldır
+      if (onPlaneSelect) onPlaneSelect(null);
+    }
+    canvas.addEventListener('click', handleClick);
+    return () => canvas.removeEventListener('click', handleClick);
+  }, [assetsLoaded, onPlaneSelect]);
+
   return (
     <>
       <canvas
@@ -514,7 +728,7 @@ const RetroPlane = ({ blocks = [], onPlaneExit }) => {
       <div
         style={{
           position: 'fixed',
-          top: 120,
+          top: 110,
           left: 70,
           background: 'rgba(0, 0, 0, 0.6)',
           padding: '8px 12px',

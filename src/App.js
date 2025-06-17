@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import styled, { createGlobalStyle } from 'styled-components';
 import { createPublicClient, http, defineChain } from 'viem';
 import RetroPlane from "./RetroPlane";
+import SelectedPlanePanel from './SelectedPlanePanel';
 
 const GlobalStyle = createGlobalStyle`
   @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
@@ -45,7 +46,7 @@ const SidePanel = styled.div`
   box-shadow: 0 0 24px #00ff00;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 16px;
   align-items: center;
   justify-content: flex-start;
 `;
@@ -54,7 +55,7 @@ const Title = styled.h1`
   color: #00ff00;
   text-align: center;
   font-size: 2.2rem;
-  margin: 0 0 24px 0;
+  margin: 0 0 16px 0;
   text-shadow: 0 0 8px #00ff00;
   width: 100%;
 `;
@@ -63,8 +64,8 @@ const Table = styled.div`
   width: 95%;
   min-width: 200px;
   max-width: 260px;
-  height: 200px;
-  padding: 20px 16px;
+  height: 180px;
+  padding: 15px 16px;
   margin-bottom: 0px;
   background: rgba(0,0,0,0.7);
   border: 2px solid #00ff00;
@@ -269,22 +270,56 @@ const BlockRadarLog = ({ rescuedBlocks }) => {
       overflowY: 'auto',
       padding: 18
     }}>
+      <style>{`
+        div::-webkit-scrollbar {
+          width: 10px;
+          background: #111;
+          border-radius: 8px;
+        }
+        div::-webkit-scrollbar-thumb {
+          background: linear-gradient(180deg, #00ff00 60%, #003300 100%);
+          border-radius: 8px;
+          box-shadow: 0 0 8px #00ff00;
+        }
+        div::-webkit-scrollbar-thumb:hover {
+          background: #00ff00;
+        }
+        div::-webkit-scrollbar-corner {
+          background: #111;
+        }
+        /* Firefox */
+        div {
+          scrollbar-width: thin;
+          scrollbar-color: #00ff00 #111;
+        }
+      `}</style>
       <div style={{fontSize: 26, fontWeight: 'bold', textAlign: 'center', marginBottom: 12, textShadow: '0 0 8px #00ff00'}}>BLOCK RADAR LOG</div>
       <div style={{fontSize: 18, fontWeight: 'bold', marginBottom: 10}}>RESCUED BLOCKS LOG</div>
       {rescuedBlocks.length === 0 && <div style={{color:'#888'}}>Henüz blok yok.</div>}
-      {rescuedBlocks.slice(-30).reverse().map((block, i) => (
-        <div key={block.number} style={{marginBottom: 16, borderBottom: '1px solid #00ff00', paddingBottom: 8}}>
-          <div style={{fontWeight:'bold', color:'#00ff00', fontSize:20}}>
-            Block #{block.number} <span style={{color:'#0f0', fontWeight:'normal', fontSize:16}}>RESCUED</span>
+      {rescuedBlocks
+        .slice()
+        .sort((a, b) => (Number(a.number) - Number(b.number)))
+        .slice(-30)
+        .map((block, i) => (
+          <div key={block.number} style={{marginBottom: 16, borderBottom: '1px solid #00ff00', paddingBottom: 8}}>
+            <div style={{fontWeight:'bold', color:'#00ff00', fontSize:20}}>
+              Block #{block.number} <span style={{
+                color:'#2196f3',
+                fontWeight:'bold',
+                fontSize:18,
+                marginLeft:8,
+                textShadow:'0 0 8px #2196f3, 0 0 16px #2196f3'
+              }}>{(block.type || 'RESCUED').toUpperCase()}</span>
+            </div>
+            <div>Tx: <b>{block.transactions?.length ?? 0}</b></div>
+            <div>Time: {block.timestamp ? new Date(Number(block.timestamp)*1000).toLocaleTimeString() : '-'}</div>
+            <div>
+              <a href={`https://testnet.monadexplorer.com/block/${block.number}`} target="_blank" rel="noopener noreferrer" style={{color:'#ffeb3b', textDecoration:'underline', fontWeight:'bold', fontSize:18, textShadow:'0 0 8px #ffeb3b'}}>
+                Explorer
+              </a>
+            </div>
           </div>
-          <div>Tx: <b>{block.transactions?.length ?? 0}</b></div>
-          <div>Time: {block.timestamp ? new Date(Number(block.timestamp)*1000).toLocaleTimeString() : '-'}</div>
-          <div>Type: <b>{block.transactions && block.transactions[0]?.type ? block.transactions[0].type : 'Other'}</b></div>
-          <div>
-            <a href={`https://testnet.monadexplorer.com/block/${block.number}`} target="_blank" rel="noopener noreferrer" style={{color:'#00ff00', textDecoration:'underline'}}>Explorer</a>
-          </div>
-        </div>
-      ))}
+        ))}
     </div>
   );
 };
@@ -327,6 +362,7 @@ function App() {
   const [ws, setWs] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [logBlocks, setLogBlocks] = useState([]);
+  const [selectedPlane, setSelectedPlane] = useState(null);
 
   // Transaction tipini analiz et (viem ile)
   const analyzeTransactionType = (tx) => {
@@ -515,21 +551,21 @@ function App() {
       <Layout>
         <SidePanel>
           <Title>MONAD RETRO BLOCK EXPLORER</Title>
-          <Table>
+          <Table style={{marginBottom: '8px', marginTop: '0', padding: '10px 8px', height: 'auto'}}>
             <TableRow><TableLabel>Block Number:</TableLabel><TableValue>{safeBlockData.number}</TableValue></TableRow>
             <TableRow><TableLabel>Timestamp:</TableLabel><TableValue>{safeBlockData.timestamp}</TableValue></TableRow>
             <TableRow><TableLabel>Transaction Count:</TableLabel><TableValue>{safeBlockData.transactionCount}</TableValue></TableRow>
             <TableRow><TableLabel>Gas Used:</TableLabel><TableValue>{safeBlockData.gasUsed}</TableValue></TableRow>
             <TableRow><TableLabel>Gas Limit:</TableLabel><TableValue>{safeBlockData.gasLimit}</TableValue></TableRow>
             <TableRow><TableLabel>Base Fee:</TableLabel><TableValue>{safeBlockData.baseFeePerGas}</TableValue></TableRow>
-          </Table>
-          <Table>
             <TableRow><TableLabel>Transfer:</TableLabel><TableValue>{txStats['Transfer']}</TableValue></TableRow>
             <TableRow><TableLabel>NFT Mint:</TableLabel><TableValue>{txStats['NFT Mint']}</TableValue></TableRow>
             <TableRow><TableLabel>DEX Swap:</TableLabel><TableValue>{txStats['DEX Swap']}</TableValue></TableRow>
             <TableRow><TableLabel>Contract Creation:</TableLabel><TableValue>{txStats['Contract Creation']}</TableValue></TableRow>
             <TableRow><TableLabel>Other:</TableLabel><TableValue>{txStats['Other']}</TableValue></TableRow>
           </Table>
+          <div style={{flex:1}} />
+          <SelectedPlanePanel selectedPlane={selectedPlane} style={{marginTop: -35, alignSelf: 'center'}} />
         </SidePanel>
         <MainArea>
         <RetroPlane 
@@ -538,6 +574,7 @@ function App() {
           txStats={txStats} 
           events={events} 
           onPlaneExit={handlePlaneExit}
+          onPlaneSelect={setSelectedPlane}
         />
         <BlockRadarLog rescuedBlocks={logBlocks} />
         </MainArea>
