@@ -220,8 +220,8 @@ const BACKGROUND = {
   }
 };
 
-const CANVAS_WIDTH = 900;  // Buradan ince ayar yapabilirsiniz
-const CANVAS_HEIGHT = 810;
+const CANVAS_WIDTH = 1080;  // Buradan ince ayar yapabilirsiniz
+const CANVAS_HEIGHT = 900;
 
 // bg.png'nin pozisyonu ve boyutu için değişkenler
 const BG_X = 0;      // Soldan boşluk
@@ -716,19 +716,23 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect }) => {
         style={{
           width: `${CANVAS_WIDTH}px`,
           height: `${CANVAS_HEIGHT}px`,
+          maxWidth: '98vw',
+          maxHeight: '98vh',
+          minWidth: '320px',
+          minHeight: '240px',
           display: 'block',
           border: '3px solid #00ff00',
           borderRadius: '16px',
           boxShadow: '0 0 24px #00ff00',
           background: '#000',
           marginTop: '20px',
-          marginLeft: '40px'
+          marginLeft: '40px',
         }}
       />
       <div
         style={{
           position: 'fixed',
-          top: 110,
+          top: 540,
           left: 70,
           background: 'rgba(0, 0, 0, 0.6)',
           padding: '8px 12px',

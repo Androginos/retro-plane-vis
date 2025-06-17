@@ -258,7 +258,7 @@ const BlockRadarLog = ({ rescuedBlocks }) => {
       right: 20,
       top: 18,
       width: 340,
-      height: 770,
+      height: 870,
       background: 'rgba(0,0,0,0.95)',
       border: '3px solid #00ff00',
       borderRadius: 16,
