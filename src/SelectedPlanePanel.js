@@ -5,7 +5,7 @@ export default function SelectedPlanePanel({ selectedPlane, handleRescue, style 
     <div style={{
       position: 'relative',
       width: 245,
-      minHeight: 270,
+      minHeight: 280,
       background: '#181818',
       border: '2px solid #00ff00',
       borderRadius: 12,

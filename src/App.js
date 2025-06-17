@@ -42,6 +42,7 @@ const SidePanel = styled.div`
   border: 3px solid #00ff00;
   border-radius: 16px;
   margin: ${PANEL_MARGIN};
+  margin-left: 28px;
   padding: ${PANEL_PADDING};
   box-shadow: 0 0 24px #00ff00;
   display: flex;
@@ -258,7 +259,7 @@ const BlockRadarLog = ({ rescuedBlocks }) => {
       right: 20,
       top: 18,
       width: 340,
-      height: 870,
+      height: 865,
       background: 'rgba(0,0,0,0.95)',
       border: '3px solid #00ff00',
       borderRadius: 16,
@@ -293,13 +294,13 @@ const BlockRadarLog = ({ rescuedBlocks }) => {
           scrollbar-color: #00ff00 #111;
         }
       `}</style>
-      <div style={{fontSize: 26, fontWeight: 'bold', textAlign: 'center', marginBottom: 12, textShadow: '0 0 8px #00ff00'}}>BLOCK RADAR LOG</div>
-      <div style={{fontSize: 18, fontWeight: 'bold', marginBottom: 10}}>RESCUED BLOCKS LOG</div>
+      <div style={{fontSize: 26, fontWeight: 'bold', textAlign: 'center', marginBottom: 12, textShadow: '0 0 8px #00ff00'}}>DAMAGED WINGS RADAR LOG</div>
+      <div style={{fontSize: 18, fontWeight: 'bold', marginBottom: 10}}>SUCCEEDED BLOCKS LOG</div>
       {rescuedBlocks.length === 0 && <div style={{color:'#888'}}>Henüz blok yok.</div>}
       {rescuedBlocks
         .slice()
-        .sort((a, b) => (Number(a.number) - Number(b.number)))
-        .slice(-30)
+        .sort((a, b) => (Number(b.number) - Number(a.number)))
+        .slice(0, 30)
         .map((block, i) => (
           <div key={block.number} style={{marginBottom: 16, borderBottom: '1px solid #00ff00', paddingBottom: 8}}>
             <div style={{fontWeight:'bold', color:'#00ff00', fontSize:20}}>
@@ -364,6 +365,7 @@ function App() {
   const [logBlocks, setLogBlocks] = useState([]);
   const [selectedPlane, setSelectedPlane] = useState(null);
   const [showPanels, setShowPanels] = useState(true);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 700);
 
   // Transaction tipini analiz et (viem ile)
   const analyzeTransactionType = (tx) => {
@@ -550,8 +552,10 @@ function App() {
     const handleResize = () => {
       if (window.innerWidth < 700) {
         setShowPanels(false);
+        setIsMobile(true);
       } else {
         setShowPanels(true);
+        setIsMobile(false);
       }
     };
     window.addEventListener('resize', handleResize);
@@ -564,26 +568,28 @@ function App() {
       <GlobalStyle />
       <Layout>
         {!showPanels && (
-          <button
-            style={{
-              position: 'fixed',
-              top: 16,
-              left: 16,
-              zIndex: 9999,
-              background: '#111',
-              color: '#00ff00',
-              border: '2px solid #00ff00',
-              borderRadius: 8,
-              padding: '8px 16px',
-              fontFamily: 'VT323, monospace',
-              fontSize: 18,
-              boxShadow: '0 0 8px #00ff00',
-              cursor: 'pointer',
-            }}
-            onClick={() => setShowPanels(true)}
-          >
-            Show Panels
-          </button>
+          !isMobile && (
+            <button
+              style={{
+                position: 'fixed',
+                top: 16,
+                left: 16,
+                zIndex: 9999,
+                background: '#111',
+                color: '#00ff00',
+                border: '2px solid #00ff00',
+                borderRadius: 8,
+                padding: '8px 16px',
+                fontFamily: 'VT323, monospace',
+                fontSize: 18,
+                boxShadow: '0 0 8px #00ff00',
+                cursor: 'pointer',
+              }}
+              onClick={() => setShowPanels(true)}
+            >
+              Show Panels
+            </button>
+          )
         )}
         <MainArea>
           <RetroPlane 
@@ -594,7 +600,7 @@ function App() {
             onPlaneExit={handlePlaneExit}
             onPlaneSelect={setSelectedPlane}
           />
-          {showPanels && (
+          {showPanels && !isMobile && (
             <>
               <SidePanel>
                 <Title>MONAD RETRO BLOCK EXPLORER</Title>
@@ -636,6 +642,48 @@ function App() {
                 Hide Panels
               </button>
             </>
+          )}
+          {isMobile && (
+            <div style={{
+              width: '100vw',
+              position: 'fixed',
+              left: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.95)',
+              zIndex: 1001,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'stretch',
+              gap: 12,
+              padding: '12px 0',
+              maxHeight: '180vh',
+              overflowY: 'auto',
+            }}>
+              <SidePanel style={{width: '96vw', margin: '0 auto'}} />
+              {showPanels && <SelectedPlanePanel selectedPlane={selectedPlane} style={{width: '96vw', margin: '0 auto'}} />}
+              {showPanels && <BlockRadarLog rescuedBlocks={logBlocks} style={{width: '96vw', margin: '0 auto'}} />}
+              {showPanels && (
+                <button
+                  style={{
+                    width: '92vw',
+                    margin: '16px auto 0 auto',
+                    background: '#111',
+                    color: '#00ff00',
+                    border: '2px solid #00ff00',
+                    borderRadius: 8,
+                    padding: '8px 16px',
+                    fontFamily: 'VT323, monospace',
+                    fontSize: 18,
+                    boxShadow: '0 0 8px #00ff00',
+                    cursor: 'pointer',
+                    display: 'block',
+                  }}
+                  onClick={() => setShowPanels(false)}
+                >
+                  Hide Panels
+                </button>
+              )}
+            </div>
           )}
         </MainArea>
       </Layout>

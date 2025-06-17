@@ -317,6 +317,12 @@ function drawBullet(ctx, bullet) {
   ctx.save();
   ctx.globalAlpha = 1.0;
   ctx.imageSmoothingEnabled = false;
+  // Glow/hare efekti: dışa 2 katman
+  ctx.fillStyle = hexToRgba(baseColor, 0.18);
+  ctx.fillRect(Math.floor(bullet.x) - 8, Math.floor(bullet.y) - 8, size + 16, size + 16);
+  ctx.fillStyle = hexToRgba(baseColor, 0.35);
+  ctx.fillRect(Math.floor(bullet.x) - 4, Math.floor(bullet.y) - 4, size + 8, size + 8);
+  // Ana kare
   ctx.fillStyle = baseColor;
   ctx.fillRect(Math.floor(bullet.x), Math.floor(bullet.y), size, size);
   if (bullet.failed) {
