@@ -583,30 +583,6 @@ function App() {
     <>
       <GlobalStyle />
       <Layout>
-        {!showPanels && (
-          !isMobile && (
-            <button
-              style={{
-                position: 'fixed',
-                top: 16,
-                left: 16,
-                zIndex: 9999,
-                background: '#111',
-                color: '#00ff00',
-                border: '2px solid #00ff00',
-                borderRadius: 8,
-                padding: '8px 16px',
-                fontFamily: 'VT323, monospace',
-                fontSize: 18,
-                boxShadow: '0 0 8px #00ff00',
-                cursor: 'pointer',
-              }}
-              onClick={() => setShowPanels(true)}
-            >
-              Show Panels
-            </button>
-          )
-        )}
         <MainArea>
           <RetroPlane 
             blocks={blocks} 
@@ -637,26 +613,6 @@ function App() {
                 <SelectedPlanePanel selectedPlane={selectedPlane} style={{marginTop: -35, alignSelf: 'center'}} />
               </SidePanel>
               <BlockRadarLog rescuedBlocks={logBlocks} />
-              <button
-                style={{
-                  position: 'fixed',
-                  top: 16,
-                  right: 16,
-                  zIndex: 9999,
-                  background: '#111',
-                  color: '#00ff00',
-                  border: '2px solid #00ff00',
-                  borderRadius: 8,
-                  padding: '8px 16px',
-                  fontFamily: 'VT323, monospace',
-                  fontSize: 18,
-                  boxShadow: '0 0 8px #00ff00',
-                  cursor: 'pointer',
-                }}
-                onClick={() => setShowPanels(false)}
-              >
-                Hide Panels
-              </button>
             </>
           )}
           {isMobile && (
@@ -678,27 +634,6 @@ function App() {
               <SidePanel style={{width: '96vw', margin: '0 auto'}} />
               {showPanels && <SelectedPlanePanel selectedPlane={selectedPlane} style={{width: '96vw', margin: '0 auto'}} />}
               {showPanels && <BlockRadarLog rescuedBlocks={logBlocks} style={{width: '96vw', margin: '0 auto'}} />}
-              {showPanels && (
-                <button
-                  style={{
-                    width: '92vw',
-                    margin: '16px auto 0 auto',
-                    background: '#111',
-                    color: '#00ff00',
-                    border: '2px solid #00ff00',
-                    borderRadius: 8,
-                    padding: '8px 16px',
-                    fontFamily: 'VT323, monospace',
-                    fontSize: 18,
-                    boxShadow: '0 0 8px #00ff00',
-                    cursor: 'pointer',
-                    display: 'block',
-                  }}
-                  onClick={() => setShowPanels(false)}
-                >
-                  Hide Panels
-                </button>
-              )}
             </div>
           )}
         </MainArea>

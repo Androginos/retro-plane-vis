@@ -360,6 +360,19 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect }) => {
   const bulletsRef = useRef([]);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 700);
 
+  // --- Müzik kontrolleri ---
+  const audioRef = useRef(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(0.01);
+  // Kullanıcı etkileşimiyle müzik başlatmak için
+  const hasStartedMusic = useRef(false);
+  // Buton ve slider pozisyonu için kolay ayar
+  const musicPanelPos = {
+    top: isMobile ? 24 : 10,
+    left: isMobile ? 12 : 0,
+    marginLeft: isMobile ? -18 : -28 // sola kaydırma
+  };
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 700);
     window.addEventListener('resize', handleResize);
@@ -367,6 +380,31 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect }) => {
   }, []);
 
   useEffect(() => { speedRef.current = speed; }, [speed]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.muted = isMuted;
+    }
+  }, [isMuted]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+
+  // Kullanıcı tıklayınca veya mute/unmute'a basınca müzik başlat
+  useEffect(() => {
+    const startMusic = () => {
+      if (!hasStartedMusic.current && audioRef.current) {
+        audioRef.current.play().catch(() => {});
+        hasStartedMusic.current = true;
+        window.removeEventListener('click', startMusic);
+      }
+    };
+    window.addEventListener('click', startMusic);
+    return () => window.removeEventListener('click', startMusic);
+  }, []);
 
   // Görselleri yükle
   useEffect(() => {
@@ -724,6 +762,141 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect }) => {
 
   return (
     <>
+      {/* Arka plan müziği */}
+      <audio
+        ref={audioRef}
+        src={process.env.PUBLIC_URL + '/assets/retro_bg_music.mp3'}
+        loop
+        autoPlay
+        muted
+        style={{ display: 'none' }}
+      />
+      {/* Müzik ve ses kontrolleri */}
+      <div
+        style={{
+          position: 'fixed',
+          top: musicPanelPos.top,
+          left: musicPanelPos.left,
+          marginLeft: musicPanelPos.marginLeft,
+          zIndex: 20001,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: isMobile ? 12 : 18,
+          background: 'none',
+          boxShadow: 'none',
+          userSelect: 'none',
+        }}
+      >
+        <button
+          onClick={() => {
+            setIsMuted(m => !m);
+            if (audioRef.current && !hasStartedMusic.current) {
+              audioRef.current.play().catch(() => {});
+              hasStartedMusic.current = true;
+            }
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            borderRadius: '50%',
+            outline: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            width: isMobile ? 38 : 44,
+            height: isMobile ? 38 : 44,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: 0,
+            boxShadow: isMuted
+              ? '0 0 0px #00ff00, 0 0 10px #00ff00 inset'
+              : '0 0 16px #00ff00, 0 0 32px #00ff00 inset',
+            transition: 'box-shadow 0.2s',
+          }}
+          title={isMuted ? 'Sesi Aç' : 'Sesi Kapat'}
+        >
+          <img
+            src={process.env.PUBLIC_URL + (isMuted ? '/assets/mute.png' : '/assets/unmute.png')}
+            alt={isMuted ? 'Mute' : 'Unmute'}
+            style={{
+              width: isMobile ? 25 : 36,
+              height: isMobile ? 25 : 36,
+              filter: 'drop-shadow(0 0 6px #00ff00)',
+              transition: 'filter 0.2s',
+              pointerEvents: 'none',
+              userSelect: 'none',
+            }}
+          />
+        </button>
+        <input
+          id="volumeRange"
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={isMuted ? 0 : volume}
+          onChange={e => {
+            setVolume(Number(e.target.value));
+            if (Number(e.target.value) === 0) setIsMuted(true);
+            else setIsMuted(false);
+            if (audioRef.current) {
+              audioRef.current.play().catch(() => {});
+            }
+          }}
+          style={{
+            WebkitAppearance: 'none',
+            appearance: 'none',
+            width: isMobile ? 90 : 120,
+            height: isMobile ? 12 : 16,
+            background: 'rgba(0, 255, 0, 0.3)',
+            outline: 'none',
+            margin: 0,
+            marginTop: isMobile ? 10 : 40,
+            marginBottom: 0,
+            display: 'block',
+            transform: 'rotate(-90deg)',
+            border: 'none',
+            borderRadius: 0,
+            boxShadow: 'none',
+            padding: 0,
+          }}
+        />
+        <style>
+          {`
+            #volumeRange::-webkit-slider-thumb {
+              -webkit-appearance: none;
+              appearance: none;
+              width: 12px;
+              height: 12px;
+              background: #00ff00;
+              border-radius: 50%;
+              cursor: pointer;
+              box-shadow: 0 0 5px #00ff00;
+              margin-top: -5px;
+            }
+            #volumeRange::-moz-range-thumb {
+              width: 12px;
+              height: 12px;
+              background: #00ff00;
+              border-radius: 50%;
+              cursor: pointer;
+              box-shadow: 0 0 5px #00ff00;
+              border: none;
+            }
+            #volumeRange::-webkit-slider-runnable-track {
+              background: linear-gradient(to right, #00ff00 ${volume * 100}%, rgba(0, 255, 0, 0.3) ${volume * 100}%);
+              height: 2px;
+              border: none;
+            }
+            #volumeRange::-moz-range-track {
+              background: linear-gradient(to right, #00ff00 ${volume * 100}%, rgba(0, 255, 0, 0.3) ${volume * 100}%);
+              height: 2px;
+              border: none;
+            }
+          `}
+        </style>
+      </div>
       <canvas
         ref={canvasRef}
         style={{
