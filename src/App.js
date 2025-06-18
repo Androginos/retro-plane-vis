@@ -200,13 +200,23 @@ const StatItem = styled.div`
   }
 `;
 
-const StatLabel = styled.span`
+const CreditsContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 1.1em;
   color: #00ff00;
 `;
 
-const StatValue = styled.span`
+const CreditLink = styled.a`
   color: #00ff00;
-  font-weight: bold;
+  text-decoration: none;
+  cursor: pointer;
+  
+  &:hover {
+    text-shadow: 0 0 5px #00ff00;
+  }
 `;
 
 const LoadingBox = styled.div`
@@ -294,8 +304,14 @@ const BlockRadarLog = ({ rescuedBlocks }) => {
           scrollbar-color: #00ff00 #111;
         }
       `}</style>
-      <div style={{fontSize: 26, fontWeight: 'bold', textAlign: 'center', marginBottom: 12, textShadow: '0 0 8px #00ff00'}}>DAMAGED WINGS RADAR LOG</div>
-      <div style={{fontSize: 18, fontWeight: 'bold', marginBottom: 10}}>SUCCEEDED BLOCKS LOG</div>
+      <CreditsContainer>
+        <CreditLink href="https://x.com/GurhanKutsal" target="_blank" rel="noopener noreferrer">
+          Built by Kutsal (X)
+        </CreditLink>
+        <div>Built for Monad Community</div>
+      </CreditsContainer>
+      <div style={{fontSize: 26, fontWeight: 'bold', textAlign: 'center', marginBottom: 8, textShadow: '0 0 8px #00ff00', marginTop: '10px'}}>DAMAGED WINGS RADAR LOG</div>
+      <div style={{fontSize: 18, fontWeight: 'bold', marginBottom: 8}}>SUCCEEDED BLOCKS LOG</div>
       {rescuedBlocks.length === 0 && <div style={{color:'#888'}}>Henüz blok yok.</div>}
       {rescuedBlocks
         .slice()
