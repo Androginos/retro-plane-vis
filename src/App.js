@@ -26,10 +26,10 @@ const Layout = styled.div`
 `;
 
 // Panel boyut ve konum ayarları
-const PANEL_WIDTH = '320px';
+const PANEL_WIDTH = '290px';
 const PANEL_MIN_WIDTH = '290px';
 const PANEL_MAX_WIDTH = '290px';
-const PANEL_HEIGHT = 'auto'; // İsterseniz örn. '700px' yapabilirsiniz
+const PANEL_HEIGHT = '885px'; // Explorer panel ile aynı yükseklik
 const PANEL_MARGIN = '20px 0 20px 20px';
 const PANEL_PADDING = '20px 5px';
 
@@ -270,10 +270,10 @@ const BlockRadarLog = ({ rescuedBlocks, onMinimize }) => {
       position: 'fixed',
       right: 20,
       top: 18,
-      width: 240,
-      minWidth: 180,
-      maxWidth: 260,
-      height: 865,
+      width: 290,
+      minWidth: 290,
+      maxWidth: 290,
+      height: '865px',
       background: 'rgba(0,0,0,0.95)',
       border: '3px solid #00ff00',
       borderRadius: 16,
