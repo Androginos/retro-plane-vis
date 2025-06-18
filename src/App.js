@@ -26,9 +26,9 @@ const Layout = styled.div`
 `;
 
 // Panel boyut ve konum ayarları
-const PANEL_WIDTH = '400px';
-const PANEL_MIN_WIDTH = '320px';
-const PANEL_MAX_WIDTH = '320px';
+const PANEL_WIDTH = '320px';
+const PANEL_MIN_WIDTH = '290px';
+const PANEL_MAX_WIDTH = '290px';
 const PANEL_HEIGHT = 'auto'; // İsterseniz örn. '700px' yapabilirsiniz
 const PANEL_MARGIN = '20px 0 20px 20px';
 const PANEL_PADDING = '20px 5px';
@@ -42,7 +42,7 @@ const SidePanel = styled.div`
   border: 3px solid #00ff00;
   border-radius: 16px;
   margin: ${PANEL_MARGIN};
-  margin-left: 28px;
+  margin-left: 60px;
   padding: 10px 5px 5px 5px;
   box-shadow: 0 0 24px #00ff00;
   display: flex;
@@ -50,6 +50,7 @@ const SidePanel = styled.div`
   gap: 16px;
   align-items: center;
   justify-content: flex-start;
+  z-index: 30002;
 `;
 
 const Title = styled.h1`
@@ -263,13 +264,15 @@ const RetroButton = styled.button`
   }
 `;
 
-const BlockRadarLog = ({ rescuedBlocks }) => {
+const BlockRadarLog = ({ rescuedBlocks, onMinimize }) => {
   return (
     <div style={{
       position: 'fixed',
       right: 20,
       top: 18,
-      width: 340,
+      width: 240,
+      minWidth: 180,
+      maxWidth: 260,
       height: 865,
       background: 'rgba(0,0,0,0.95)',
       border: '3px solid #00ff00',
@@ -278,10 +281,22 @@ const BlockRadarLog = ({ rescuedBlocks }) => {
       fontFamily: 'VT323, monospace',
       fontSize: 18,
       boxShadow: '0 0 24px #00ff00',
-      zIndex: 20000,
+      zIndex: 30001,
       overflowY: 'auto',
       padding: 18
     }}>
+      {/* Minimize butonu */}
+      {onMinimize && (
+        <button
+          onClick={onMinimize}
+          style={{
+            position: 'absolute', top: 8, right: 12, zIndex: 10,
+            background: 'none', border: 'none', color: '#00ff00', fontSize: 22, cursor: 'pointer',
+            padding: 0, margin: 0
+          }}
+          title="Simge durumuna küçült"
+        >–</button>
+      )}
       <style>{`
         div::-webkit-scrollbar {
           width: 10px;
@@ -388,6 +403,9 @@ function App() {
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.01);
   const hasStartedMusic = useRef(false);
+  const [isBlockPanelMinimized, setBlockPanelMinimized] = useState(false);
+  const [isLogPanelMinimized, setLogPanelMinimized] = useState(false);
+  const isMobileOrTablet = typeof window !== 'undefined' && window.innerWidth < 900;
 
   // Transaction tipini analiz et (viem ile)
   const analyzeTransactionType = (tx) => {
@@ -610,6 +628,19 @@ function App() {
     }
   }, [volume]);
 
+  // useEffect ile ekran boyutuna göre otomatik minimize
+  useEffect(() => {
+    function handleResize() {
+      const isSmall = window.innerWidth < 1400 || window.innerHeight < 900;
+      setBlockPanelMinimized(isSmall);
+      setLogPanelMinimized(isSmall);
+    }
+    window.addEventListener('resize', handleResize);
+    // İlk yüklemede de kontrol et
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
     <>
       <GlobalStyle />
@@ -624,235 +655,245 @@ function App() {
             onPlaneSelect={setSelectedPlane}
             speed={speed}
           />
-          {showPanels && !isMobile && (
-            <>
-              <SidePanel>
-                <Title>MONAD RETRO BLOCK EXPLORER</Title>
-                <Table style={{marginBottom: '8px', marginTop: '0', padding: '10px 8px', height: 'auto'}}>
-                  <TableRow><TableLabel>Block Number:</TableLabel><TableValue>{safeBlockData.number}</TableValue></TableRow>
-                  <TableRow><TableLabel>Timestamp:</TableLabel><TableValue>{safeBlockData.timestamp}</TableValue></TableRow>
-                  <TableRow><TableLabel>Transaction Count:</TableLabel><TableValue>{safeBlockData.transactionCount}</TableValue></TableRow>
-                  <TableRow><TableLabel>Gas Used:</TableLabel><TableValue>{safeBlockData.gasUsed}</TableValue></TableRow>
-                  <TableRow><TableLabel>Gas Limit:</TableLabel><TableValue>{safeBlockData.gasLimit}</TableValue></TableRow>
-                  <TableRow><TableLabel>Base Fee:</TableLabel><TableValue>{safeBlockData.baseFeePerGas}</TableValue></TableRow>
-                  <TableRow><TableLabel>Transfer:</TableLabel><TableValue>{txStats['Transfer']}</TableValue></TableRow>
-                  <TableRow><TableLabel>NFT Mint:</TableLabel><TableValue>{txStats['NFT Mint']}</TableValue></TableRow>
-                  <TableRow><TableLabel>DEX Swap:</TableLabel><TableValue>{txStats['DEX Swap']}</TableValue></TableRow>
-                  <TableRow><TableLabel>Contract Creation:</TableLabel><TableValue>{txStats['Contract Creation']}</TableValue></TableRow>
-                  <TableRow><TableLabel>Other:</TableLabel><TableValue>{txStats['Other']}</TableValue></TableRow>
-                </Table>
-                <div style={{width:'100%', margin:'-16px 0 0 0', display:'flex', flexDirection:'column', alignItems:'center'}}>
-                  <label 
-                    htmlFor="speedRange" 
-                    style={{
-                      textShadow: '0 0 5px #00ff00',
-                      whiteSpace: 'nowrap',
-                      fontFamily: 'VT323, monospace',
-                      color: '#00ff00',
-                      fontSize: 18,
-                      marginBottom: 2
-                    }}
-                  >
-                    Speed: {speed.toFixed(2)}x
-                  </label>
-                  <input
-                    id="speedRange"
-                    type="range"
-                    min="0.2"
-                    max="2"
-                    step="0.1"
-                    value={speed}
-                    onChange={e => setSpeed(parseFloat(e.target.value))}
-                    style={{
-                      WebkitAppearance: 'none',
-                      width: '90%',
-                      height: '4px',
-                      background: 'rgba(0, 255, 0, 0.3)',
-                      outline: 'none',
-                      margin: '0',
-                      padding: '0',
-                    }}
-                  />
-                  <style>
-                    {`
-                      #speedRange::-webkit-slider-thumb {
-                        -webkit-appearance: none;
-                        appearance: none;
-                        width: 12px;
-                        height: 12px;
-                        background: #00ff00;
-                        border-radius: 50%;
-                        cursor: pointer;
-                        box-shadow: 0 0 5px #00ff00;
-                        margin-top: -5px;
-                      }
-                      #speedRange::-moz-range-thumb {
-                        width: 12px;
-                        height: 12px;
-                        background: #00ff00;
-                        border-radius: 50%;
-                        cursor: pointer;
-                        box-shadow: 0 0 5px #00ff00;
-                        border: none;
-                      }
-                      #speedRange::-webkit-slider-runnable-track {
-                        background: linear-gradient(to right, #00ff00 50%, rgba(0, 255, 0, 0.3) 50%);
-                        height: 3px;
-                        border: none;
-                      }
-                      #speedRange::-moz-range-track {
-                        background: linear-gradient(to right, #00ff00 50%, rgba(0, 255, 0, 0.3) 50%);
-                        height: 2px;
-                        border: none;
-                      }
-                    `}
-                  </style>
-                </div>
-                <div style={{width:'100%', margin:'6px 0 0 0', display:'flex', flexDirection:'column', alignItems:'center'}}>
-                  <SelectedPlanePanel selectedPlane={selectedPlane} style={{marginTop: 0, alignSelf: 'center'}} />
-                </div>
-                {/* Ses kontrolü: mute/unmute ve slider yatay */}
-                <div style={{width:'100%', margin:'0 0 0 0', display:'flex', flexDirection:'row', alignItems:'flex-end', justifyContent:'center', gap: 14}}>
-                  <span style={{
+          {showPanels && !isMobile && !isBlockPanelMinimized && (
+            <SidePanel style={{position:'relative'}}>
+              {/* Minimize butonu */}
+              <button
+                onClick={() => setBlockPanelMinimized(true)}
+                style={{
+                  position: 'absolute', top: 8, right: 12, zIndex: 10,
+                  background: 'none', border: 'none', color: '#00ff00', fontSize: 22, cursor: 'pointer',
+                  padding: 0, margin: 0
+                }}
+                title="Simge durumuna küçült"
+              >–</button>
+              <Title>MONAD RETRO BLOCK EXPLORER</Title>
+              <Table style={{marginBottom: '8px', marginTop: '0', padding: '10px 8px', height: 'auto'}}>
+                <TableRow><TableLabel>Block Number:</TableLabel><TableValue>{safeBlockData.number}</TableValue></TableRow>
+                <TableRow><TableLabel>Timestamp:</TableLabel><TableValue>{safeBlockData.timestamp}</TableValue></TableRow>
+                <TableRow><TableLabel>Transaction Count:</TableLabel><TableValue>{safeBlockData.transactionCount}</TableValue></TableRow>
+                <TableRow><TableLabel>Gas Used:</TableLabel><TableValue>{safeBlockData.gasUsed}</TableValue></TableRow>
+                <TableRow><TableLabel>Gas Limit:</TableLabel><TableValue>{safeBlockData.gasLimit}</TableValue></TableRow>
+                <TableRow><TableLabel>Base Fee:</TableLabel><TableValue>{safeBlockData.baseFeePerGas}</TableValue></TableRow>
+                <TableRow><TableLabel>Transfer:</TableLabel><TableValue>{txStats['Transfer']}</TableValue></TableRow>
+                <TableRow><TableLabel>NFT Mint:</TableLabel><TableValue>{txStats['NFT Mint']}</TableValue></TableRow>
+                <TableRow><TableLabel>DEX Swap:</TableLabel><TableValue>{txStats['DEX Swap']}</TableValue></TableRow>
+                <TableRow><TableLabel>Contract Creation:</TableLabel><TableValue>{txStats['Contract Creation']}</TableValue></TableRow>
+                <TableRow><TableLabel>Other:</TableLabel><TableValue>{txStats['Other']}</TableValue></TableRow>
+              </Table>
+              <div style={{width:'100%', margin:'-16px 0 0 0', display:'flex', flexDirection:'column', alignItems:'center'}}>
+                <label 
+                  htmlFor="speedRange" 
+                  style={{
+                    textShadow: '0 0 5px #00ff00',
+                    whiteSpace: 'nowrap',
                     fontFamily: 'VT323, monospace',
                     color: '#00ff00',
                     fontSize: 18,
-                    marginRight: 6,
-                    marginBottom: 20,
-                    letterSpacing: 1.5,
-                    textShadow: '0 0 4px #00ff00',
-                    animation: 'music-blink 1.2s infinite alternate',
-                  }}>MUSIC</span>
-                  <audio
-                    ref={audioRef}
-                    src={process.env.PUBLIC_URL + '/assets/retro_bg_music.mp3'}
-                    loop
-                    autoPlay
-                    style={{ display: 'none' }}
-                  />
-                  <button
-                    onClick={() => {
-                      setIsMuted(m => !m);
-                      if (audioRef.current && !hasStartedMusic.current) {
-                        audioRef.current.play().catch(() => {});
-                        hasStartedMusic.current = true;
-                      }
-                    }}
+                    marginBottom: 2
+                  }}
+                >
+                  Speed: {speed.toFixed(2)}x
+                </label>
+                <input
+                  id="speedRange"
+                  type="range"
+                  min="0.2"
+                  max="2"
+                  step="0.1"
+                  value={speed}
+                  onChange={e => setSpeed(parseFloat(e.target.value))}
+                  style={{
+                    WebkitAppearance: 'none',
+                    width: '90%',
+                    height: '4px',
+                    background: 'rgba(0, 255, 0, 0.3)',
+                    outline: 'none',
+                    margin: '0',
+                    padding: '0',
+                  }}
+                />
+                <style>
+                  {`
+                    #speedRange::-webkit-slider-thumb {
+                      -webkit-appearance: none;
+                      appearance: none;
+                      width: 12px;
+                      height: 12px;
+                      background: #00ff00;
+                      border-radius: 50%;
+                      cursor: pointer;
+                      box-shadow: 0 0 5px #00ff00;
+                      margin-top: -5px;
+                    }
+                    #speedRange::-moz-range-thumb {
+                      width: 12px;
+                      height: 12px;
+                      background: #00ff00;
+                      border-radius: 50%;
+                      cursor: pointer;
+                      box-shadow: 0 0 5px #00ff00;
+                      border: none;
+                    }
+                    #speedRange::-webkit-slider-runnable-track {
+                      background: linear-gradient(to right, #00ff00 50%, rgba(0, 255, 0, 0.3) 50%);
+                      height: 3px;
+                      border: none;
+                    }
+                    #speedRange::-moz-range-track {
+                      background: linear-gradient(to right, #00ff00 50%, rgba(0, 255, 0, 0.3) 50%);
+                      height: 2px;
+                      border: none;
+                    }
+                  `}
+                </style>
+              </div>
+              <div style={{width:'100%', margin:'6px 0 0 0', display:'flex', flexDirection:'column', alignItems:'center'}}>
+                <SelectedPlanePanel selectedPlane={selectedPlane} style={{marginTop: 0, alignSelf: 'center'}} />
+              </div>
+              {/* Ses kontrolü: mute/unmute ve slider yatay */}
+              <div style={{width:'100%', margin:'0 0 0 0', display:'flex', flexDirection:'row', alignItems:'flex-end', justifyContent:'center', gap: 14}}>
+                <span style={{
+                  fontFamily: 'VT323, monospace',
+                  color: '#00ff00',
+                  fontSize: 18,
+                  marginRight: 6,
+                  marginBottom: 20,
+                  letterSpacing: 1.5,
+                  textShadow: '0 0 4px #00ff00',
+                  animation: 'music-blink 1.2s infinite alternate',
+                }}>MUSIC</span>
+                <audio
+                  ref={audioRef}
+                  src={process.env.PUBLIC_URL + '/assets/retro_bg_music.mp3'}
+                  loop
+                  autoPlay
+                  style={{ display: 'none' }}
+                />
+                <button
+                  onClick={() => {
+                    setIsMuted(m => !m);
+                    if (audioRef.current && !hasStartedMusic.current) {
+                      audioRef.current.play().catch(() => {});
+                      hasStartedMusic.current = true;
+                    }
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    borderRadius: '50%',
+                    outline: 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    width: 36,
+                    height: 36,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: 0,
+                    position: 'relative',
+                    top: -12,
+                    boxShadow: isMuted
+                      ? '0 0 0px #00ff00, 0 0 10px #00ff00 inset'
+                      : '0 0 16px #00ff00, 0 0 32px #00ff00 inset',
+                    transition: 'box-shadow 0.2s',
+                  }}
+                  title={isMuted ? 'Sesi Aç' : 'Sesi Kapat'}
+                >
+                  <img
+                    src={process.env.PUBLIC_URL + (isMuted ? '/assets/mute.png' : '/assets/unmute.png')}
+                    alt={isMuted ? 'Mute' : 'Unmute'}
                     style={{
-                      background: 'none',
-                      border: 'none',
-                      borderRadius: '50%',
-                      outline: 'none',
-                      cursor: 'pointer',
-                      padding: 0,
-                      width: 36,
-                      height: 36,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      margin: 0,
-                      position: 'relative',
-                      top: -12,
-                      boxShadow: isMuted
-                        ? '0 0 0px #00ff00, 0 0 10px #00ff00 inset'
-                        : '0 0 16px #00ff00, 0 0 32px #00ff00 inset',
-                      transition: 'box-shadow 0.2s',
-                    }}
-                    title={isMuted ? 'Sesi Aç' : 'Sesi Kapat'}
-                  >
-                    <img
-                      src={process.env.PUBLIC_URL + (isMuted ? '/assets/mute.png' : '/assets/unmute.png')}
-                      alt={isMuted ? 'Mute' : 'Unmute'}
-                      style={{
-                        width: 32,
-                        height: 32,
-                        filter: 'drop-shadow(0 0 6px #00ff00)',
-                        transition: 'filter 0.2s',
-                        pointerEvents: 'none',
-                        userSelect: 'none',
-                        display: 'block',
-                        objectFit: 'contain',
-                      }}
-                    />
-                  </button>
-                  <input
-                    id="volumeRange"
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={isMuted ? 0 : volume}
-                    onChange={e => {
-                      setVolume(Number(e.target.value));
-                      if (Number(e.target.value) === 0) setIsMuted(true);
-                      else setIsMuted(false);
-                      if (audioRef.current && !hasStartedMusic.current) {
-                        audioRef.current.play().catch(() => {});
-                        hasStartedMusic.current = true;
-                      }
-                    }}
-                    style={{
-                      WebkitAppearance: 'none',
-                      appearance: 'none',
-                      width: 120,
-                      height: 12,
-                      background: 'rgba(0, 255, 0, 0.3)',
-                      outline: 'none',
-                      margin: '0 0 0 8px',
-                      marginTop: -8,
-                      marginBottom: 24,
-                      padding: 0,
-                      border: 'none',
-                      borderRadius: 0,
-                      boxShadow: 'none',
+                      width: 32,
+                      height: 32,
+                      filter: 'drop-shadow(0 0 6px #00ff00)',
+                      transition: 'filter 0.2s',
+                      pointerEvents: 'none',
+                      userSelect: 'none',
                       display: 'block',
+                      objectFit: 'contain',
                     }}
                   />
-                </div>
-                {/* Style hack: slider thumb ve track için global stil */}
-                <style>{`
-                  #volumeRange::-webkit-slider-thumb {
-                    -webkit-appearance: none;
-                    appearance: none;
-                    width: 12px;
-                    height: 12px;
-                    background: #00ff00;
-                    border-radius: 50%;
-                    cursor: pointer;
-                    box-shadow: 0 0 5px #00ff00;
-                    margin-top: -5px;
-                  }
-                  #volumeRange::-moz-range-thumb {
-                    width: 12px;
-                    height: 12px;
-                    background: #00ff00;
-                    border-radius: 50%;
-                    cursor: pointer;
-                    box-shadow: 0 0 5px #00ff00;
-                    border: none;
-                  }
-                  #volumeRange::-webkit-slider-runnable-track {
-                    background: linear-gradient(to right, #00ff00 ${volume * 100}%, rgba(0, 255, 0, 0.3) ${volume * 100}%);
-                    height: 3px;
-                    border: none;
-                  }
-                  #volumeRange::-moz-range-track {
-                    background: linear-gradient(to right, #00ff00 ${volume * 100}%, rgba(0, 255, 0, 0.3) ${volume * 100}%);
-                    height: 3px;
-                    border: none;
-                  }
-                `}</style>
-                <style>{`
-                  @keyframes music-blink {
-                    0%, 100% { opacity: 1; text-shadow: 0 0 4px #00ff00, 0 0 12px #00ff00; }
-                    50% { opacity: 0.6; text-shadow: 0 0 16px #00ff00, 0 0 32px #00ff00; }
-                  }
-                `}</style>
-              </SidePanel>
-              <BlockRadarLog rescuedBlocks={logBlocks} />
-            </>
+                </button>
+                <input
+                  id="volumeRange"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={isMuted ? 0 : volume}
+                  onChange={e => {
+                    setVolume(Number(e.target.value));
+                    if (Number(e.target.value) === 0) setIsMuted(true);
+                    else setIsMuted(false);
+                    if (audioRef.current && !hasStartedMusic.current) {
+                      audioRef.current.play().catch(() => {});
+                      hasStartedMusic.current = true;
+                    }
+                  }}
+                  style={{
+                    WebkitAppearance: 'none',
+                    appearance: 'none',
+                    width: 120,
+                    height: 12,
+                    background: 'rgba(0, 255, 0, 0.3)',
+                    outline: 'none',
+                    margin: '0 0 0 8px',
+                    marginTop: -8,
+                    marginBottom: 24,
+                    padding: 0,
+                    border: 'none',
+                    borderRadius: 0,
+                    boxShadow: 'none',
+                    display: 'block',
+                  }}
+                />
+              </div>
+              {/* Style hack: slider thumb ve track için global stil */}
+              <style>{`
+                #volumeRange::-webkit-slider-thumb {
+                  -webkit-appearance: none;
+                  appearance: none;
+                  width: 12px;
+                  height: 12px;
+                  background: #00ff00;
+                  border-radius: 50%;
+                  cursor: pointer;
+                  box-shadow: 0 0 5px #00ff00;
+                  margin-top: -5px;
+                }
+                #volumeRange::-moz-range-thumb {
+                  width: 12px;
+                  height: 12px;
+                  background: #00ff00;
+                  border-radius: 50%;
+                  cursor: pointer;
+                  box-shadow: 0 0 5px #00ff00;
+                  border: none;
+                }
+                #volumeRange::-webkit-slider-runnable-track {
+                  background: linear-gradient(to right, #00ff00 ${volume * 100}%, rgba(0, 255, 0, 0.3) ${volume * 100}%);
+                  height: 3px;
+                  border: none;
+                }
+                #volumeRange::-moz-range-track {
+                  background: linear-gradient(to right, #00ff00 ${volume * 100}%, rgba(0, 255, 0, 0.3) ${volume * 100}%);
+                  height: 3px;
+                  border: none;
+                }
+              `}</style>
+              <style>{`
+                @keyframes music-blink {
+                  0%, 100% { opacity: 1; text-shadow: 0 0 4px #00ff00, 0 0 12px #00ff00; }
+                  50% { opacity: 0.6; text-shadow: 0 0 16px #00ff00, 0 0 32px #00ff00; }
+                }
+              `}</style>
+            </SidePanel>
           )}
-          {isMobile && (
+          {!isLogPanelMinimized && (
+            <BlockRadarLog rescuedBlocks={logBlocks} onMinimize={() => setLogPanelMinimized(true)} />
+          )}
+          {isMobile && !isBlockPanelMinimized && (
             <div style={{
               width: '100vw',
               position: 'fixed',
@@ -870,9 +911,44 @@ function App() {
             }}>
               <SidePanel style={{width: '96vw', margin: '0 auto'}} />
               {showPanels && <SelectedPlanePanel selectedPlane={selectedPlane} style={{width: '96vw', margin: '0 auto'}} />}
-              {showPanels && <BlockRadarLog rescuedBlocks={logBlocks} style={{width: '96vw', margin: '0 auto'}} />}
             </div>
           )}
+          {isMobile && !isLogPanelMinimized && (
+            <BlockRadarLog rescuedBlocks={logBlocks} onMinimize={() => setLogPanelMinimized(true)} style={{width: '96vw', margin: '0 auto'}} />
+          )}
+          {/* Minimize ikonları: hem mobil/tablet hem masaüstü için */}
+          {isBlockPanelMinimized && (
+            <button
+              onClick={() => setBlockPanelMinimized(false)}
+              style={{
+                position: 'fixed', left: '50%', bottom: 120, transform: 'translateX(-50%)',
+                width: 48, height: 48, borderRadius: 24, background: '#111', color: '#00ff00',
+                border: '2px solid #00ff00', boxShadow: '0 0 8px #00ff00', fontFamily: 'VT323, monospace',
+                fontSize: 28, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                animation: 'blink 1.2s infinite alternate',
+              }}
+              title="Block Explorer Panelini Aç"
+            >📋</button>
+          )}
+          {isLogPanelMinimized && (
+            <button
+              onClick={() => setLogPanelMinimized(false)}
+              style={{
+                position: 'fixed', left: 'calc(50% + 60px)', bottom: 120, transform: 'translateX(-50%)',
+                width: 48, height: 48, borderRadius: 24, background: '#111', color: '#00ff00',
+                border: '2px solid #00ff00', boxShadow: '0 0 8px #00ff00', fontFamily: 'VT323, monospace',
+                fontSize: 28, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                animation: 'blink 1.2s infinite alternate',
+              }}
+              title="Log Panelini Aç"
+            >📝</button>
+          )}
+          <style>{`
+            @keyframes blink {
+              0% { opacity: 1; }
+              100% { opacity: 0.5; }
+            }
+          `}</style>
         </MainArea>
       </Layout>
     </>
