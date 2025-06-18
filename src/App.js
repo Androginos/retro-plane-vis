@@ -616,18 +616,6 @@ function App() {
     return () => window.removeEventListener('click', startMusic);
   }, []);
 
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.muted = isMuted;
-    }
-  }, [isMuted]);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-    }
-  }, [volume]);
-
   // useEffect ile ekran boyutuna göre otomatik minimize
   useEffect(() => {
     function handleResize() {
@@ -646,6 +634,14 @@ function App() {
       <GlobalStyle />
       <Layout>
         <MainArea>
+          {/* Ses dosyası - her zaman DOM'da olmalı */}
+          <audio
+            ref={audioRef}
+            src={process.env.PUBLIC_URL + '/assets/retro_bg_music.mp3'}
+            loop
+            autoPlay
+            style={{ display: 'none' }}
+          />
           <RetroPlane 
             blocks={blocks} 
             onReturn={() => setShowRetro(false)} 
@@ -763,19 +759,33 @@ function App() {
                   textShadow: '0 0 4px #00ff00',
                   animation: 'music-blink 1.2s infinite alternate',
                 }}>MUSIC</span>
-                <audio
-                  ref={audioRef}
-                  src={process.env.PUBLIC_URL + '/assets/retro_bg_music.mp3'}
-                  loop
-                  autoPlay
-                  style={{ display: 'none' }}
-                />
                 <button
                   onClick={() => {
-                    setIsMuted(m => !m);
-                    if (audioRef.current && !hasStartedMusic.current) {
-                      audioRef.current.play().catch(() => {});
-                      hasStartedMusic.current = true;
+                    const newMuteState = !isMuted;
+                    setIsMuted(newMuteState);
+                    // Ses kontrolü
+                    if (audioRef.current) {
+                      console.log('AudioRef mevcut, volume ayarlanıyor...');
+                      if (newMuteState) {
+                        console.log('Mute yapılıyor, volume = 0');
+                        audioRef.current.volume = 0;
+                      } else {
+                        console.log('Unmute yapılıyor, volume =', volume);
+                        audioRef.current.volume = volume;
+                        // Müzik duraklamışsa başlat
+                        if (audioRef.current.paused) {
+                          console.log('Müzik durmuş, tekrar başlatılıyor...');
+                          audioRef.current.play().catch(() => {});
+                        }
+                        // Müzik hiç başlamamışsa da başlat
+                        if (!hasStartedMusic.current) {
+                          console.log('Müzik hiç başlamamış, ilk kez başlatılıyor...');
+                          audioRef.current.play().catch(() => {});
+                          hasStartedMusic.current = true;
+                        }
+                      }
+                    } else {
+                      console.log('AudioRef null!');
                     }
                   }}
                   style={{
@@ -823,12 +833,16 @@ function App() {
                   step={0.01}
                   value={isMuted ? 0 : volume}
                   onChange={e => {
-                    setVolume(Number(e.target.value));
-                    if (Number(e.target.value) === 0) setIsMuted(true);
+                    const newVolume = Number(e.target.value);
+                    setVolume(newVolume);
+                    if (newVolume === 0) setIsMuted(true);
                     else setIsMuted(false);
-                    if (audioRef.current && !hasStartedMusic.current) {
-                      audioRef.current.play().catch(() => {});
-                      hasStartedMusic.current = true;
+                    if (audioRef.current) {
+                      audioRef.current.volume = newVolume;
+                      if (!hasStartedMusic.current) {
+                        audioRef.current.play().catch(() => {});
+                        hasStartedMusic.current = true;
+                      }
                     }
                   }}
                   style={{
@@ -916,34 +930,135 @@ function App() {
           {isMobile && !isLogPanelMinimized && (
             <BlockRadarLog rescuedBlocks={logBlocks} onMinimize={() => setLogPanelMinimized(true)} style={{width: '96vw', margin: '0 auto'}} />
           )}
-          {/* Minimize ikonları: hem mobil/tablet hem masaüstü için */}
-          {isBlockPanelMinimized && (
-            <button
-              onClick={() => setBlockPanelMinimized(false)}
-              style={{
-                position: 'fixed', left: '50%', bottom: 120, transform: 'translateX(-50%)',
-                width: 48, height: 48, borderRadius: 24, background: '#111', color: '#00ff00',
-                border: '2px solid #00ff00', boxShadow: '0 0 8px #00ff00', fontFamily: 'VT323, monospace',
-                fontSize: 28, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                animation: 'blink 1.2s infinite alternate',
-              }}
-              title="Block Explorer Panelini Aç"
-            >📋</button>
+          {/* Minimize ikonları: canvas sol üst köşesinde, yeni PNG görselleri ile */}
+          {(isBlockPanelMinimized || isLogPanelMinimized) && (
+            <div style={{
+              position: 'fixed', 
+              left: 20, 
+              top: 20, 
+              display: 'flex', 
+              flexDirection: 'row', 
+              gap: 12, 
+              zIndex: 50000,
+              alignItems: 'center'
+            }}>
+              {/* Block Explorer minimize ikonu */}
+              {isBlockPanelMinimized && (
+                <button
+                  onClick={() => setBlockPanelMinimized(false)}
+                  style={{
+                    width: 60, 
+                    height: 60, 
+                    background: 'radial-gradient(circle, #00ff00, #00cc00)', 
+                    border: '2px solid #00ff00', 
+                    borderRadius: 12,
+                    boxShadow: '0 0 20px #00ff00, 0 0 40px #00ff00', 
+                    cursor: 'pointer',
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    padding: 8,
+                    animation: 'glow 1.5s infinite alternate'
+                  }}
+                  title="Block Explorer Panelini Aç"
+                >
+                  <img 
+                    src={process.env.PUBLIC_URL + '/assets/block.png'} 
+                    alt="Block" 
+                    style={{width: 44, height: 44, filter: 'drop-shadow(0 0 8px #000)'}}
+                  />
+                </button>
+              )}
+              
+              {/* Log Panel minimize ikonu */}
+              {isLogPanelMinimized && (
+                <button
+                  onClick={() => setLogPanelMinimized(false)}
+                  style={{
+                    width: 60, 
+                    height: 60, 
+                    background: 'radial-gradient(circle, #00ff00, #00cc00)', 
+                    border: '2px solid #00ff00', 
+                    borderRadius: 12,
+                    boxShadow: '0 0 20px #00ff00, 0 0 40px #00ff00', 
+                    cursor: 'pointer',
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    padding: 8,
+                    animation: 'glow 1.5s infinite alternate'
+                  }}
+                  title="Log Panelini Aç"
+                >
+                  <img 
+                    src={process.env.PUBLIC_URL + '/assets/log.png'} 
+                    alt="Log" 
+                    style={{width: 44, height: 44, filter: 'drop-shadow(0 0 8px #000)'}}
+                  />
+                </button>
+              )}
+              {/* Mute/Unmute butonu - sadece paneller minimize olduğunda görünür */}
+              {(isBlockPanelMinimized || isLogPanelMinimized) && (
+                <button
+                  onClick={() => {
+                    const newMuteState = !isMuted;
+                    setIsMuted(newMuteState);
+                    // Ses kontrolü
+                    if (audioRef.current) {
+                      if (newMuteState) {
+                        audioRef.current.volume = 0;
+                      } else {
+                        audioRef.current.volume = volume;
+                        // Müzik duraklamışsa başlat
+                        if (audioRef.current.paused) {
+                          audioRef.current.play().catch(() => {});
+                        }
+                        // Müzik hiç başlamamışsa da başlat
+                        if (!hasStartedMusic.current) {
+                          audioRef.current.play().catch(() => {});
+                          hasStartedMusic.current = true;
+                        }
+                      }
+                    }
+                  }}
+                  style={{
+                    width: 60, 
+                    height: 60, 
+                    background: 'radial-gradient(circle, #00ff00, #00cc00)', 
+                    border: '2px solid #00ff00', 
+                    borderRadius: 12,
+                    boxShadow: '0 0 20px #00ff00, 0 0 40px #00ff00', 
+                    cursor: 'pointer',
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    padding: 8,
+                    animation: 'glow 1.5s infinite alternate'
+                  }}
+                  title={isMuted ? 'Sesi Aç' : 'Sesi Kapat'}
+                >
+                  <img
+                    src={process.env.PUBLIC_URL + (isMuted ? '/assets/mute.png' : '/assets/unmute.png')}
+                    alt={isMuted ? 'Mute' : 'Unmute'}
+                    style={{width: 44, height: 44, filter: 'drop-shadow(0 0 8px #000)'}}
+                  />
+                </button>
+              )}
+            </div>
           )}
-          {isLogPanelMinimized && (
-            <button
-              onClick={() => setLogPanelMinimized(false)}
-              style={{
-                position: 'fixed', left: 'calc(50% + 60px)', bottom: 120, transform: 'translateX(-50%)',
-                width: 48, height: 48, borderRadius: 24, background: '#111', color: '#00ff00',
-                border: '2px solid #00ff00', boxShadow: '0 0 8px #00ff00', fontFamily: 'VT323, monospace',
-                fontSize: 28, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                animation: 'blink 1.2s infinite alternate',
-              }}
-              title="Log Panelini Aç"
-            >📝</button>
-          )}
+          
+          {/* Glow animasyonu için stil */}
           <style>{`
+            @keyframes glow {
+              0% { 
+                box-shadow: 0 0 20px #00ff00, 0 0 40px #00ff00; 
+                background: radial-gradient(circle, #00ff00, #00cc00);
+              }
+              100% { 
+                box-shadow: 0 0 30px #00ff00, 0 0 60px #00ff00, 0 0 80px #00ff00; 
+                background: radial-gradient(circle, #33ff33, #00ff00);
+              }
+            }
             @keyframes blink {
               0% { opacity: 1; }
               100% { opacity: 0.5; }
