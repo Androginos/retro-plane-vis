@@ -72,8 +72,8 @@ export default function SelectedPlanePanel({ selectedPlane, handleRescue, style 
             )}
           </div>
           <button
-            disabled={selectedPlane.type !== 'overloaded'}
-            onClick={() => selectedPlane.type === 'overloaded' && handleRescue && handleRescue(selectedPlane)}
+            disabled={selectedPlane.type !== 'OVERLOADED'}
+            onClick={() => selectedPlane.type === 'OVERLOADED' && handleRescue && handleRescue(selectedPlane)}
             style={{
               height: 150,
               width: 60,
@@ -84,12 +84,12 @@ export default function SelectedPlanePanel({ selectedPlane, handleRescue, style 
               fontFamily: 'VT323, monospace',
               fontSize: 18,
               fontWeight: 'bold',
-              background: selectedPlane.type === 'overloaded' ? 'linear-gradient(orange,#ff9800 80%,#ffb74d)' : '#444',
-              color: selectedPlane.type === 'overloaded' ? '#fff' : '#bbb',
-              boxShadow: selectedPlane.type === 'overloaded' ? '0 0 24px 6px #ff9800' : 'none',
-              cursor: selectedPlane.type === 'overloaded' ? 'pointer' : 'not-allowed',
-              outline: selectedPlane.type === 'overloaded' ? '2px solid #ff9800' : 'none',
-              opacity: selectedPlane.type === 'overloaded' ? 1 : 0.5,
+              background: selectedPlane.type === 'OVERLOADED' ? 'linear-gradient(orange,#ff9800 80%,#ffb74d)' : '#444',
+              color: selectedPlane.type === 'OVERLOADED' ? '#fff' : '#bbb',
+              boxShadow: selectedPlane.type === 'OVERLOADED' ? '0 0 24px 6px #ff9800' : 'none',
+              cursor: selectedPlane.type === 'OVERLOADED' ? 'pointer' : 'not-allowed',
+              outline: selectedPlane.type === 'OVERLOADED' ? '2px solid #ff9800' : 'none',
+              opacity: selectedPlane.type === 'OVERLOADED' ? 1 : 0.5,
               transition: 'all 0.2s',
               display: 'flex',
               flexDirection: 'column',

@@ -370,7 +370,28 @@ const getBlockType = (block) => {
   if (Array.isArray(block.transactions) && block.transactions.length === 0 && (block.gasUsed === '0' || block.gasUsed === 0)) {
     return 'GHOST';
   }
-  if (Array.isArray(block.transactions) && block.transactions.some(tx => tx.status === 'reverted' || tx.reverted === true)) {
+  
+  // TEST MODU KAPALI - Artık gerçek revert transaction'ları kullanıyoruz
+  
+  // Revert kontrolü - 1 tane bile revert işlem varsa blok OVERLOADED
+  if (Array.isArray(block.transactions) && block.transactions.some(tx => 
+    tx.status === '0' || 
+    tx.status === 0 || 
+    tx.status === 'reverted' || 
+    tx.reverted === true ||
+    tx.failedMsg
+  )) {
+    // Gerçek revert transaction sayısını say
+    const revertCount = block.transactions.filter(tx => 
+      tx.status === '0' || 
+      tx.status === 0 || 
+      tx.status === 'reverted' || 
+      tx.reverted === true ||
+      tx.failedMsg
+    ).length;
+    
+    console.log(`🔴 OVERLOADED BLOCK #${block.number} - ${revertCount}/${block.transactions.length} reverts`);
+    
     return 'OVERLOADED';
   }
   return 'VALIDATED';
@@ -407,11 +428,21 @@ function App() {
   const [isLogPanelMinimized, setLogPanelMinimized] = useState(false);
   const isMobileOrTablet = typeof window !== 'undefined' && window.innerWidth < 900;
 
-  // Transaction tipini analiz et (viem ile)
+    // Transaction tipini analiz et (viem ile)
   const analyzeTransactionType = (tx) => {
     if (!tx) return 'Other';
     
-    console.log('Analyzing transaction:', tx);
+    // Revert kontrolü - başarısız transaction'ları tespit et (EN ÖNCE KONTROL ET!)
+    const isRevert = tx.status === '0' || 
+                     tx.status === 0 || 
+                     tx.status === 'reverted' || 
+                     tx.reverted === true || 
+                     tx.failedMsg;
+    
+    if (isRevert) {
+      console.log(`🔥 REVERT TX: ${tx.transactionHash?.slice(0,10)}... (status: ${tx.status})`);
+      return 'Other';
+    }
     
     // Contract creation kontrolü
     if (!tx.to) {
@@ -429,9 +460,6 @@ function App() {
       tx.input.startsWith('0x8803dbee') || // SushiSwap
       tx.input.startsWith('0x5c11d795')    // 1inch
     )) return 'DEX Swap';
-    
-    // Revert kontrolü
-    if (tx.status === 'reverted' || tx.type === 'Other') return 'Other';
     
     return 'Other';
   };
@@ -463,10 +491,22 @@ function App() {
         setTxStats(statsData);
       } else if (blockObj.transactions) {
         const newStats = { ...txStats };
-        blockObj.transactions.forEach(tx => {
+        let revertCount = 0;
+        
+        blockObj.transactions.forEach((tx) => {
           const txType = analyzeTransactionType(tx);
           newStats[txType] = (newStats[txType] || 0) + 1;
+          
+          // Revert transaction sayısını say
+          if (tx.status === '0' || tx.status === 0 || tx.status === 'reverted' || tx.reverted === true || tx.failedMsg) {
+            revertCount++;
+          }
         });
+        
+        if (revertCount > 0) {
+          console.log(`🚨 Block #${blockObj.number} - ${revertCount} REVERT TRANSACTION → OVERLOADED!`);
+        }
+        
         setTxStats(newStats);
       }
 
@@ -506,20 +546,9 @@ function App() {
       };
 
       ws.onmessage = (event) => {
-        console.log('=== WebSocket Raw Data ===');
-        console.log('Raw data:', event.data);
         try {
           const parsed = JSON.parse(event.data);
           const blockData = parsed.data?.block || parsed.block || parsed.data || parsed;
-          
-          console.log('=== Parsed Block Data ===');
-          console.log('Block number:', blockData.number);
-          console.log('Block timestamp:', blockData.timestamp);
-          console.log('Gas used:', blockData.gasUsed);
-          console.log('Gas limit:', blockData.gasLimit);
-          console.log('Transactions:', blockData.transactions);
-          console.log('Transaction count:', blockData.transactions?.length);
-          console.log('Transaction types:', blockData.transactions?.map(tx => analyzeTransactionType(tx)));
           
           handleNewBlock(event.data);
         } catch (error) {
@@ -581,6 +610,18 @@ function App() {
       if (prev.some(b => b.number === block.number)) return prev;
       return [...prev, block];
     });
+  };
+
+  // RESCUE fonksiyonu - OVERLOADED uçağı RESCUED yapma
+  const handleRescue = (block) => {
+    console.log(`🛟 RESCUE: Block #${block.number} kurtarılıyor!`);
+    setBlocks(prevBlocks => 
+      prevBlocks.map(b => 
+        b.number === block.number 
+          ? { ...b, type: 'RESCUED', isRescued: true }
+          : b
+      )
+    );
   };
 
   // blocks dizisinin güncellenmesini ve sıfırlanmadığını kontrol et
@@ -650,6 +691,7 @@ function App() {
             onPlaneExit={handlePlaneExit}
             onPlaneSelect={setSelectedPlane}
             speed={speed}
+            onRescue={handleRescue}
           />
           {showPanels && !isMobile && !isBlockPanelMinimized && (
             <SidePanel style={{position:'relative'}}>
@@ -745,7 +787,7 @@ function App() {
                 </style>
               </div>
               <div style={{width:'100%', margin:'6px 0 0 0', display:'flex', flexDirection:'column', alignItems:'center'}}>
-                <SelectedPlanePanel selectedPlane={selectedPlane} style={{marginTop: 0, alignSelf: 'center'}} />
+                <SelectedPlanePanel selectedPlane={selectedPlane} handleRescue={handleRescue} style={{marginTop: 0, alignSelf: 'center'}} />
               </div>
               {/* Ses kontrolü: mute/unmute ve slider yatay */}
               <div style={{width:'100%', margin:'0 0 0 0', display:'flex', flexDirection:'row', alignItems:'flex-end', justifyContent:'center', gap: 14}}>
@@ -924,7 +966,7 @@ function App() {
               overflowY: 'auto',
             }}>
               <SidePanel style={{width: '96vw', margin: '0 auto'}} />
-              {showPanels && <SelectedPlanePanel selectedPlane={selectedPlane} style={{width: '96vw', margin: '0 auto'}} />}
+              {showPanels && <SelectedPlanePanel selectedPlane={selectedPlane} handleRescue={handleRescue} style={{width: '96vw', margin: '0 auto'}} />}
             </div>
           )}
           {isMobile && !isLogPanelMinimized && (

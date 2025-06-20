@@ -300,6 +300,7 @@ const getTurretByType = (type) => {
     case 'NFT Mint': return TURRETS[1];
     case 'DEX Swap': return TURRETS[2];
     case 'Contract': return TURRETS[3];
+    case 'Revert': return TURRETS[4]; // Revert mermileri Other turret'ından çıkar
     default: return TURRETS[4];
   }
 };
@@ -311,23 +312,38 @@ function drawBullet(ctx, bullet) {
     'NFT Mint': '#b2f296',
     'DEX Swap': '#f0e68c',
     'Contract': '#d58a94',
-    'Other': '#c9b7f3'
+    'Other': '#c9b7f3',
+    'Revert': '#ff4444' // Kırmızı revert mermi
   };
   const baseColor = colorMap[bullet.type] || '#888888';
   ctx.save();
   ctx.globalAlpha = 1.0;
   ctx.imageSmoothingEnabled = false;
-  // Glow/hare efekti: dışa 2 katman
+  
+  // Revert mermi için özel efekt
+  if (bullet.type === 'Revert') {
+    // Daha büyük ve titrek glow efekti
+    const time = Date.now() * 0.01;
+    const glowIntensity = 0.3 + Math.sin(time) * 0.15;
+    ctx.fillStyle = hexToRgba(baseColor, glowIntensity);
+    ctx.fillRect(Math.floor(bullet.x) - 12, Math.floor(bullet.y) - 12, size + 24, size + 24);
+    ctx.fillStyle = hexToRgba(baseColor, glowIntensity * 1.5);
+    ctx.fillRect(Math.floor(bullet.x) - 6, Math.floor(bullet.y) - 6, size + 12, size + 12);
+  } else {
+    // Normal glow/hare efekti: dışa 2 katman
   ctx.fillStyle = hexToRgba(baseColor, 0.18);
   ctx.fillRect(Math.floor(bullet.x) - 8, Math.floor(bullet.y) - 8, size + 16, size + 16);
   ctx.fillStyle = hexToRgba(baseColor, 0.35);
   ctx.fillRect(Math.floor(bullet.x) - 4, Math.floor(bullet.y) - 4, size + 8, size + 8);
+  }
+  
   // Ana kare
   ctx.fillStyle = baseColor;
   ctx.fillRect(Math.floor(bullet.x), Math.floor(bullet.y), size, size);
-  if (bullet.failed) {
-    ctx.fillStyle = '#d13d3d';
-    ctx.font = 'bold 12px monospace';
+  
+  if (bullet.failed || bullet.type === 'Revert') {
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('X', Math.floor(bullet.x) + size / 2, Math.floor(bullet.y) + size / 2 + 1);
@@ -348,7 +364,7 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect, speed = 1 }) => {
+const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect, speed = 1, onRescue }) => {
   const canvasRef = useRef(null);
   const [assetsLoaded, setAssetsLoaded] = useState(false);
   const [planeImages, setPlaneImages] = useState([]);
@@ -391,21 +407,50 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect, speed = 1 }) => {
     }
   }, []);
 
-  // Yeni bloklar için plane oluştur
+  // Blok güncellemelerini takip et ve mevcut uçakları güncelle
   useEffect(() => {
     if (!assetsLoaded) return;
+    
+    // Mevcut uçakların blok bilgilerini güncelle
+    planesRef.current = planesRef.current.map(plane => {
+      const updatedBlock = blocks.find(b => b.number === plane.block.number);
+      if (updatedBlock) {
+        const wasRescued = !plane.isRescued && (updatedBlock.type === 'RESCUED' || updatedBlock.isRescued);
+        if (wasRescued) {
+          console.log(`🛟 Uçak #${plane.block.number} RESCUED! Çıkış yörüngesine alınıyor...`);
+          // Rescued uçağı çıkış yörüngesine al
+          return {
+            ...plane,
+            block: updatedBlock,
+            isRescued: true,
+            targetY: Math.random() * (CANVAS_HEIGHT * 0.3) + 50, // Üst kısımdan çıkacak
+            vy: 0,
+            gravity: 0
+          };
+        }
+        return {
+          ...plane,
+          block: updatedBlock,
+          isRescued: updatedBlock.type === 'RESCUED' || updatedBlock.isRescued
+        };
+      }
+      return plane;
+    });
+    
+    // Yeni bloklar için plane oluştur
     const newBlocks = blocks.filter(block => !planesRef.current.some(plane => plane.block.number === block.number));
     if (newBlocks.length > 0) {
       const newPlanes = newBlocks.map(block => {
         const fromLeft = Number(block.number) % 2 === 0;
         const velocityMultiplier = speed;
+        const isOverloaded = block.type === 'OVERLOADED';
         return {
           block,
           x: fromLeft ? -100 : CANVAS_WIDTH + 100,
           y: 50 + Math.random() * (CANVAS_HEIGHT * 0.20),
           vx: fromLeft ? (Math.random() * 1.5 + 1) * velocityMultiplier : -(Math.random() * 1.5 + 1) * velocityMultiplier,
           vy: (Math.random() * 0.18 + 0.05) * velocityMultiplier,
-          gravity: Math.random() * 0.001 * velocityMultiplier,
+          gravity: isOverloaded ? Math.random() * 0.002 * velocityMultiplier : Math.random() * 0.001 * velocityMultiplier,
           fromLeft,
           width: PLANE_WIDTH,
           height: PLANE_HEIGHT,
@@ -413,6 +458,7 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect, speed = 1 }) => {
           hitCount: 0,
           succeeded: false,
           targetY: null,
+          isRescued: block.type === 'RESCUED' || block.isRescued,
         };
       });
       planesRef.current = [...planesRef.current, ...newPlanes];
@@ -426,12 +472,28 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect, speed = 1 }) => {
       if (!block.transactions) return;
       const plane = planesRef.current.find(p => p.block.number === block.number);
       if (!plane) return;
+      
+      // Bu blok için zaten mermi oluşturuldu mu kontrol et
+      const existingBullets = bulletsRef.current.filter(b => b.targetPlaneNumber === block.number);
+      if (existingBullets.length > 0) {
+        return; // Zaten mermi var, tekrar oluşturma
+      }
+      
       // 5 ana tipe göre grupla
-      const txTypeCounts = { 'Transfer': 0, 'NFT Mint': 0, 'DEX Swap': 0, 'Contract': 0, 'Other': 0 };
+      const txTypeCounts = { 'Transfer': 0, 'NFT Mint': 0, 'DEX Swap': 0, 'Contract': 0, 'Other': 0, 'Revert': 0 };
+      
       block.transactions.forEach(tx => {
+        // Revert transaction kontrolü
+        if (tx.status === '0' || tx.status === 0 || tx.status === 'reverted' || tx.reverted === true || tx.failedMsg) {
+          txTypeCounts['Revert'] = (txTypeCounts['Revert'] || 0) + 1;
+        } else {
         const bulletType = getBulletType(tx.type);
         txTypeCounts[bulletType] = (txTypeCounts[bulletType] || 0) + 1;
+        }
       });
+      
+      // Artık test mermi oluşturmuyoruz - sadece gerçek revert transaction'ları kullanıyoruz
+      
       Object.entries(txTypeCounts).forEach(([type, count]) => {
         if (count === 0) return;
         const turret = getTurretByType(type);
@@ -444,7 +506,7 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect, speed = 1 }) => {
           y: turret.y + TURRET_SIZE / 2,
           targetPlaneNumber: block.number,
           progress: 0,
-          speed: 0.012 + Math.random() * 0.008,
+          speed: type === 'Revert' ? 0.008 + Math.random() * 0.006 : 0.012 + Math.random() * 0.008, // Revert mermileri daha hızlı
           size,
           createdAt: Date.now() + Math.random() * 200
         });
@@ -503,13 +565,36 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect, speed = 1 }) => {
           if (block.transactions && Array.isArray(block.transactions)) {
             txCount = block.transactions.filter(tx => getBulletType(tx.type) === bullet.type).length;
           }
-          plane.hitCount = (plane.hitCount || 0) + txCount;
-          // Eğer hitCount, toplam tx sayısına ulaştıysa succeeded
-          if (plane.hitCount >= (plane.block.transactions?.length || 0)) {
+          
+          // RESCUED uçaklar mermileri yoksayar
+          if (plane.isRescued) {
+            console.log(`🛟 RESCUED uçak mermi yoksayıyor - artık güvende!`);
+            return; // Mermiyi silme, sadece yoksay
+          }
+          
+          // Hit counter'ı transaction sayısı ile sınırla
+          const totalTxCount = plane.block.transactions?.length || 0;
+          const currentHitCount = plane.hitCount || 0;
+          
+          // OVERLOADED uçaklar için özel mantık
+          if (block.type === 'OVERLOADED') {
+            if (bullet.type === 'Revert') {
+              console.log(`🔥 OVERLOADED uçağa Revert mermi çarptı! Hasar alıyor ama succeeded olmayacak...`);
+              plane.hitCount = Math.min(currentHitCount + 1, totalTxCount);
+            } else {
+              plane.hitCount = Math.min(currentHitCount + txCount, totalTxCount);
+            }
+            // OVERLOADED uçaklar HİÇBİR ZAMAN succeeded olmazlar!
+            console.log(`🔥 OVERLOADED uçak hit aldı (${plane.hitCount}/${totalTxCount}) ama succeeded olmayacak!`);
+          } else {
+            plane.hitCount = Math.min(currentHitCount + txCount, totalTxCount);
+            // Normal uçaklar için succeeded mantığı (RESCUED değilse)
+            if (!plane.isRescued && plane.hitCount >= totalTxCount) {
             plane.succeeded = true;
             plane.targetY = CANVAS_HEIGHT * (0.5 + Math.random()*0.3);
             plane.vy = 0;
             plane.gravity = 0;
+            }
           }
         } else {
           newBullets.push(bullet);
@@ -564,9 +649,9 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect, speed = 1 }) => {
       planesRef.current.forEach((plane, idx) => {
         const { block, fromLeft } = plane;
         const img = fromLeft ? planeImages[0] : planeImages[1];
-        // Succeeded ise düz ve hedefe in
-        if (plane.succeeded) {
-          // Süzülmeyi bırak, gravity yok, dalga yok
+        // Rescued ise düz ve hedefe in (succeeded gibi davran ama succeeded olmaz!)
+        if (plane.isRescued) {
+          // RESCUED uçaklar için özel çıkış mantığı
           if (plane.targetY !== null && Math.abs(plane.y - plane.targetY) > 2) {
             // Hedef y'ye in
             plane.y += (plane.targetY - plane.y) * 0.08;
@@ -578,13 +663,32 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect, speed = 1 }) => {
           }
           // Düz çıkış (x yönü)
           plane.x += plane.vx * 1.5; // daha hızlı çıkabilir
+        } else if (plane.succeeded) {
+          // Normal succeeded uçaklar için
+          if (plane.targetY !== null && Math.abs(plane.y - plane.targetY) > 2) {
+            plane.y += (plane.targetY - plane.y) * 0.08;
+          } else {
+            plane.y = plane.targetY;
+            plane.vy = 0;
+            plane.gravity = 0;
+          }
+          plane.x += plane.vx * 1.5;
         } else {
-          // Fiziksel hareket ve dalga
+          // OVERLOADED uçaklar için özel hareket (daha yavaş düşüş)
+          if (plane.block.type === 'OVERLOADED') {
+            plane.x += plane.vx * 0.7; // Daha yavaş hareket
+            plane.y += plane.vy * 0.5; // Daha yavaş düşüş
+            plane.vy += plane.gravity * 1.5; // Ama gravity artış hızı
+            // Daha belirgin dalga efekti (hasarlı uçak gibi)
+            plane.y += Math.sin(Date.now() / 300 + plane.x / 100) * 2.5;
+          } else {
+            // Normal fiziksel hareket ve dalga
           plane.x += plane.vx;
           plane.y += plane.vy;
           plane.vy += plane.gravity;
           // Dalga efekti
           plane.y += Math.sin(Date.now() / 400 + plane.x / 120) * 1.2;
+          }
         }
         // Y ekseni sınırı ve sekme
         const maxY = CANVAS_HEIGHT * 0.6;
@@ -604,20 +708,48 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect, speed = 1 }) => {
         if (!fromLeft) {
           ctx.translate(plane.x + PLANE_WIDTH / 2, plane.y + PLANE_HEIGHT / 2);
           ctx.scale(-1, 1);
-          // Succeeded ise glow efekti
-          if (plane.succeeded) {
+          
+          // Glow efektleri
+          if (plane.succeeded || plane.isRescued) {
+            if (plane.isRescued) {
+              // RESCUED uçaklar için daha opak ve güçlü yeşil glow
+              ctx.globalAlpha = 0.9;
+              ctx.shadowColor = '#00ff80';
+              ctx.shadowBlur = 40;
+            } else {
             ctx.shadowColor = '#00ff80';
             ctx.shadowBlur = 32;
+            }
+          } else if (plane.block.type === 'OVERLOADED') {
+            // OVERLOADED uçaklar için titrek KIRMIZI glow
+            const time = Date.now() * 0.005;
+            ctx.shadowColor = '#ff4444';
+            ctx.shadowBlur = 20 + Math.sin(time) * 8;
           }
+          
           ctx.drawImage(img, -PLANE_WIDTH / 2, -PLANE_HEIGHT / 2, PLANE_WIDTH, PLANE_HEIGHT);
         } else {
-          // Succeeded ise glow efekti
-          if (plane.succeeded) {
+          // Glow efektleri
+          if (plane.succeeded || plane.isRescued) {
+            if (plane.isRescued) {
+              // RESCUED uçaklar için daha opak ve güçlü yeşil glow
+              ctx.globalAlpha = 0.9;
+              ctx.shadowColor = '#00ff80';
+              ctx.shadowBlur = 40;
+            } else {
             ctx.shadowColor = '#00ff80';
             ctx.shadowBlur = 32;
+            }
+          } else if (plane.block.type === 'OVERLOADED') {
+            // OVERLOADED uçaklar için titrek KIRMIZI glow
+            const time = Date.now() * 0.005;
+            ctx.shadowColor = '#ff4444';
+            ctx.shadowBlur = 20 + Math.sin(time) * 8;
           }
+          
           ctx.drawImage(img, plane.x, plane.y, PLANE_WIDTH, PLANE_HEIGHT);
         }
+        ctx.globalAlpha = 1; // Alpha'yı sıfırla
         ctx.restore();
         // Üstte blok numarası, tx sayısı ve hit counter
         const label = `#${block.number} | tx: ${block.transactions?.length ?? 0} | hit: ${plane.hitCount ?? 0}`;
@@ -640,14 +772,33 @@ const RetroPlane = ({ blocks = [], onPlaneExit, onPlaneSelect, speed = 1 }) => {
         ctx.fillStyle = '#00ff00';
         ctx.fillText(label, labelX, labelY);
         ctx.shadowBlur = 0;
-        // Succeeded ise blok numarasının altında SUCCEEDED yazısı
-        if (plane.succeeded) {
+        // Durum yazıları (önce RESCUED kontrol et!)
+        if (plane.isRescued) {
+          ctx.font = `bold 22px VT323, monospace`;
+          ctx.textAlign = 'center';
+          ctx.shadowColor = '#00ff80';
+          ctx.shadowBlur = 16;
+          ctx.fillStyle = '#00ff80';
+          ctx.fillText('RESCUED', labelX, labelY + 32);
+          ctx.shadowBlur = 0;
+        } else if (plane.succeeded) {
           ctx.font = `bold 22px VT323, monospace`;
           ctx.textAlign = 'center';
           ctx.shadowColor = '#FFA500';
           ctx.shadowBlur = 16;
           ctx.fillStyle = '#FFA500';
           ctx.fillText('SUCCEEDED', labelX, labelY + 32);
+          ctx.shadowBlur = 0;
+        } else if (plane.block.type === 'OVERLOADED') {
+          // OVERLOADED yazısı titrek KIRMIZI efekt ile
+          const time = Date.now() * 0.008;
+          const shake = Math.sin(time) * 2;
+          ctx.font = `bold 22px VT323, monospace`;
+          ctx.textAlign = 'center';
+          ctx.shadowColor = '#ff4444';
+          ctx.shadowBlur = 20 + Math.sin(time * 2) * 6;
+          ctx.fillStyle = '#ff4444';
+          ctx.fillText('OVERLOADED', labelX + shake, labelY + 32);
           ctx.shadowBlur = 0;
         }
         // Altta gas oranı
